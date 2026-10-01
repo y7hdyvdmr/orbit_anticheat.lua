@@ -1,21 +1,19 @@
 --[[ ═══════════════════════════════════════════════════════════
-     ORBIT ANTI-CHEAT — Полностью автономный скрипт v10.5
+     ORBIT ANTI-CHEAT v10.6 — ФИКС БЕСКОНЕЧНОГО SMART FLOOR
      ═══════════════════════════════════════════════════════════
      НЕ зависит от ОРБИТЫ
-     Свои настройки, свой UI, своя кнопка 🛡
      
-     🆕 ЗВУКИ:
-     - 135692693675195 — 🎤 голос Санса
-     - 113650760423588 — 😂 смех
-     - 140721035016341 — 💨 уворот
-     - 6325779988      — 💨 после уворота
+     🆕 ИСПРАВЛЕНО:
+     - Smart Floor больше НЕ срабатывает на земле
+     - Кулдаун 3 сек между спасениями
+     - Убран длинный звук-смех при спасении
+     - Санс и смех играют ТОЛЬКО при Auto-Dodge
      
-     Звуки играют:
-     - 🥷 При Auto-Dodge (уклонение)
-     - 🛡 При Smart Floor (спасение от падения)
-     - 🚨 При Reverse Fling (ответка)
-     - 🖱 При кликах по кнопкам
-     - 🚩 При пометке читера
+     Звуки:
+     - 135692693675195 — 🎤 Санс (Auto-Dodge)
+     - 113650760423588 — 😂 Смех (Auto-Dodge)
+     - 140721035016341 — 💨 Уворот (Auto-Dodge)
+     - 6325779988      — 💨 После уворота (Auto-Dodge)
      
      Запуск:
      loadstring(game:HttpGet("https://raw.githubusercontent.com/y7hdyvdmr/my-orbit-script/refs/heads/main/orbit_anticheat.lua"))()
@@ -36,7 +34,6 @@ local TweenService = game:GetService("TweenService")
 local LocalPlayer  = Players.LocalPlayer
 local PlayerGui    = LocalPlayer:WaitForChild("PlayerGui")
 
--- ==================== БЕЗОПАСНЫЙ PARENT ====================
 local function getSafeParent()
     local gethuiFn = rawget(GENV, "gethui")
     if type(gethuiFn) == "function" then
@@ -60,11 +57,9 @@ local function protectGui(gui)
     end
 end
 
--- ==================== НАСТРОЙКИ ====================
 local SETTINGS = {
     Enabled           = false,
     SoundEnabled      = true,
-
     AntiFling         = true,
     AntiVoid          = true,
     AntiTeleport      = true,
@@ -75,17 +70,13 @@ local SETTINGS = {
     AntiDropKick      = true,
     AntiExplosion     = true,
     DisableFallDamage = true,
-
     AutoHeal          = false,
     AutoHealValue     = 100,
     LockPosition      = false,
-
     DodgeEnabled      = false,
     ReverseFlingEnabled = false,
-
     DetectSpeedHack   = true,
     DetectGodMode     = true,
-
     SmartFloorY       = 5,
     UIButtonPos       = UDim2.new(0, 20, 0, 200),
 }
@@ -105,19 +96,16 @@ local sfxFolder = Instance.new("Folder")
 sfxFolder.Name = "OrbitAC_Sfx_" .. tostring(math.random(100000, 999999))
 sfxFolder.Parent = SoundService
 
--- 🆕 ВСЕ ID
 local SOUND_IDS = {
     click       = "rbxasset://sounds/button.wav",
     switch      = "rbxasset://sounds/switch.wav",
     ping        = "rbxasset://sounds/electronicpingshort.wav",
     snap        = "rbxasset://sounds/snap.mp3",
-
-    -- Твои кастомные
-    dodge       = "rbxassetid://140721035016341",  -- 💨 уворот
-    afterDodge  = "rbxassetid://6325779988",       -- 💨 после уворота
-    sans        = "rbxassetid://135692693675195",  -- 🎤 Санс
-    laugh       = "rbxassetid://113650760423588",  -- 😂 смех
-    botCollect  = "rbxassetid://12221967",         -- 🎁 сбор бота
+    dodge       = "rbxassetid://140721035016341",
+    afterDodge  = "rbxassetid://6325779988",
+    sans        = "rbxassetid://135692693675195",
+    laugh       = "rbxassetid://113650760423588",
+    botCollect  = "rbxassetid://12221967",
 }
 
 local sfxTemplates = {}
@@ -141,11 +129,9 @@ local function playSound(name, volume, pitch)
     if not SETTINGS.SoundEnabled then return end
     local tpl = sfxTemplates[name]
     if not tpl then return end
-
     local now = os.clock()
     if lastPlay[name] and now - lastPlay[name] < 0.04 then return end
     lastPlay[name] = now
-
     pcall(function()
         local s = tpl:Clone()
         s.Volume = (volume or 1) * tpl.Volume
@@ -156,32 +142,21 @@ local function playSound(name, volume, pitch)
     end)
 end
 
--- Хелперы
 local function playClick() playSound("click", 0.5) end
 local function playSwitch() playSound("switch", 0.5) end
 local function playPing() playSound("ping", 0.5) end
 
--- 🆕 Полная последовательность уворота с Сансом
+-- 🆕 Санс + смех + уворот — ТОЛЬКО при Auto-Dodge
 local function playSansDodge()
     if not SETTINGS.SoundEnabled then return end
-
-    -- 1. Звук уворота (сразу)
     playSound("dodge", 1, 1)
-
-    -- 2. После уворота (0.3 сек)
-    task.delay(0.3, function()
-        playSound("afterDodge", 1, 1)
-    end)
-
-    -- 3. Санс + смех + эмоция Laugh (0.6 сек)
+    task.delay(0.3, function() playSound("afterDodge", 1, 1) end)
     task.delay(0.6, function()
-        -- Эмоция Laugh (с авто-сбросом через 2 сек)
         pcall(function()
             local char = LocalPlayer.Character
             local hum = char and char:FindFirstChildOfClass("Humanoid")
             if not hum then return end
             hum:PlayEmote("Laugh")
-
             task.delay(2, function()
                 pcall(function()
                     local animator = hum:FindFirstChildOfClass("Animator")
@@ -195,31 +170,20 @@ local function playSansDodge()
                 end)
             end)
         end)
-
-        -- 🎤 Голос Санса
         playSound("sans", 1, 1)
-
-        -- 😂 Смех (через 0.15 сек)
-        task.delay(0.15, function()
-            playSound("laugh", 0.8, 1)
-        end)
+        task.delay(0.15, function() playSound("laugh", 0.8, 1) end)
     end)
 end
 
--- 🆕 Звук при спасении (падение в пустоту)
+-- 🆕 Короткий звук при спасении — только ping (без длинного смеха)
 local function playSmartFloorSound()
     if not SETTINGS.SoundEnabled then return end
-    -- Восходящий звук — "уф, спасло"
-    playSound("ping", 0.7, 1.3)
-    task.delay(0.15, function()
-        playSound("afterDodge", 0.6, 1.2)
-    end)
+    playSound("ping", 0.6, 1.5)
 end
 
--- 🆕 Звук при пометке читера
 local function playCheaterTagSound()
     if not SETTINGS.SoundEnabled then return end
-    playSound("laugh", 0.5, 0.8)  -- зловещий смех
+    playSound("ping", 0.4, 0.8)
 end
 
 -- ==================== СОСТОЯНИЕ ====================
@@ -229,6 +193,7 @@ local STATE = {
     lastHealthCheck = 0, lastScan = 0, lastPositions = {}, godmodeWarned = {},
     voidTimer = 0, lastFloorCheck = 0, lastHRP = nil, dropkickWarned = {},
     cframeJumpCounter = 0, blockedFlingCount = 0, groundTimer = 0, charConn = nil,
+    lastSmartFloor = 0,  -- 🆕 кулдаун Smart Floor
 }
 
 local CFG = {
@@ -236,10 +201,11 @@ local CFG = {
     FLING_VEL_THRESHOLD = 1000, FLING_SPIN_THRESHOLD = 500,
     FLING_INSTANT_THRESHOLD = 100000,
     TELEPORT_DETECT_DIST = 30,
-    VOID_TIMER_THRESHOLD = 0.1,
+    VOID_TIMER_THRESHOLD = 0.5,   -- 🆕 было 0.1
     VOID_FAST_FALL_VY = -50,
     FLOOR_RAY_LENGTH = 500, FLOOR_RAY_SIDE = 100,
     GROUND_MIN_TIME = 1.0,
+    SMART_FLOOR_COOLDOWN = 3,     -- 🆕
 }
 
 local BAD_CLASSES = {
@@ -265,7 +231,6 @@ LocalPlayer.CharacterAdded:Connect(function(c)
     if h then ORIG_WS, ORIG_JP = h.WalkSpeed, h.JumpPower end
 end)
 
--- ==================== УТИЛИТЫ ====================
 local function log(text) print("[OrbitAC] " .. text) end
 
 local function killObject(obj)
@@ -346,7 +311,6 @@ local function getSafeFloorPosition()
     return Vector3.new(0, 50, 0)
 end
 
--- ==================== ФУНКЦИИ ЗАЩИТЫ ====================
 local function disableFallDamage(char)
     if not SETTINGS.DisableFallDamage then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
@@ -484,23 +448,33 @@ local function antiInstantKill(char)
     STATE.lastHealthCheck = now
 end
 
+-- 🆕 ANTI-VOID — ИСПРАВЛЕННЫЙ
 local function antiVoid(char, hrp, dt)
     if not SETTINGS.AntiVoid then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return end
 
+    -- 🆕 На земле — не срабатываем
+    if isGrounded(hrp) then
+        STATE.voidTimer = 0
+        return
+    end
+
     local vy = hrp.AssemblyLinearVelocity.Y
     local y = hrp.Position.Y
     local falling = false
-    local fallenY = Workspace.FallenPartsDestroyHeight or -500
 
-    if y < (fallenY + 80) then
+    -- 🆕 Жёстко Y < -100 (не зависит от карты)
+    if y < -100 then
         falling = true
     elseif vy < CFG.VOID_FAST_FALL_VY then
         local rp = RaycastParams.new()
         rp.FilterType = Enum.RaycastFilterType.Exclude
         rp.FilterDescendantsInstances = {char}
-        falling = Workspace:Raycast(hrp.Position, Vector3.new(0, -CFG.FLOOR_RAY_LENGTH, 0), rp) == nil
+        local ray = Workspace:Raycast(hrp.Position, Vector3.new(0, -CFG.FLOOR_RAY_LENGTH, 0), rp)
+        if not ray then
+            falling = true
+        end
     end
 
     if not falling then
@@ -508,16 +482,24 @@ local function antiVoid(char, hrp, dt)
         return
     end
 
+    -- 🆕 Кулдаун 3 сек
+    local now = tick()
+    if now - (STATE.lastSmartFloor or 0) < CFG.SMART_FLOOR_COOLDOWN then
+        STATE.voidTimer = 0
+        return
+    end
+
     STATE.voidTimer = STATE.voidTimer + (dt or 0.1)
     if STATE.voidTimer > CFG.VOID_TIMER_THRESHOLD then
         local safePos = getSafeFloorPosition()
-        if safePos then
+        -- 🆕 Только если safePos ВЫШЕ текущей позиции
+        if safePos and safePos.Y > y + 3 then
+            STATE.lastSmartFloor = now
             pcall(function()
                 char:PivotTo(CFrame.new(safePos))
                 resetVelocity(char)
             end)
             warn("[OrbitAC] Smart Floor спас с Y=" .. math.floor(y))
-            -- 🆕 Звук при спасении
             playSmartFloorSound()
             notify("🛡 Smart Floor спас!", Color3.fromRGB(120, 255, 180), 2)
             SESSION.protectionsTriggered = SESSION.protectionsTriggered + 1
@@ -570,7 +552,6 @@ local function setupAutoDodge()
     if dodgeConn then dodgeConn:Disconnect(); dodgeConn = nil end
     dodgeConn = RunService.Heartbeat:Connect(function(dt)
         if not SETTINGS.Enabled or not DODGE.Enabled then return end
-
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
@@ -620,7 +601,7 @@ local function setupAutoDodge()
         DODGE.LastDodge = now
         SESSION.dodgesMade = SESSION.dodgesMade + 1
 
-        -- 🆕 Санс + смех + уворот
+        -- 🆕 Санс + смех + уворот — ТОЛЬКО тут
         playSansDodge()
         notify("🥷 Уклонение!", Color3.fromRGB(150, 220, 255), 1.5)
     end)
@@ -667,7 +648,6 @@ local function scanForFlingers()
     end
 end
 
--- ==================== МЕТКА ЧИТЕРА ====================
 function tagCheater(player, enable)
     if not player or player == LocalPlayer then return false end
     if enable then
@@ -675,7 +655,6 @@ function tagCheater(player, enable)
         CHEATERS_LOG[player.UserId] = { name = player.Name, time = os.time() }
         SESSION.cheatersTagged = SESSION.cheatersTagged + 1
         warn("[OrbitAC] Помечен: " .. player.Name)
-        -- 🆕 Звук при пометке
         playCheaterTagSound()
         notify("🚩 Помечен: " .. player.Name, Color3.fromRGB(255, 120, 120))
     else
@@ -773,7 +752,6 @@ local function processProtection(dt, char, hrp)
     end
 end
 
--- ==================== ВКЛ/ВЫКЛ ====================
 local protConn = nil
 
 local function enableProtection()
@@ -788,7 +766,7 @@ local function enableProtection()
     STATE.voidTimer = 0; STATE.lastFloorCheck = 0
     STATE.lastHRP = nil; STATE.cframeJumpCounter = 0
     STATE.dropkickWarned = {}; STATE.blockedFlingCount = 0
-    STATE.groundTimer = 0
+    STATE.groundTimer = 0; STATE.lastSmartFloor = 0
 
     if LocalPlayer.Character then
         antiKnockback(LocalPlayer.Character)
@@ -800,7 +778,7 @@ local function enableProtection()
         STATE.lastHRP = nil
         STATE.spawnGrace = tick()
         STATE.lastSafePos = nil; STATE.lastSafeCFrame = nil
-        STATE.groundTimer = 0
+        STATE.groundTimer = 0; STATE.lastSmartFloor = 0
         task.wait(0.5)
         disableFallDamage(newChar)
     end)
@@ -884,7 +862,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.Position = UDim2.new(0, 0, 0, 6)
 title.BackgroundTransparency = 1
-title.Text = "🛡  ORBIT ANTI-CHEAT v10.5"
+title.Text = "🛡  ORBIT ANTI-CHEAT v10.6"
 title.TextColor3 = Color3.fromRGB(255, 200, 200)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 15
@@ -1065,7 +1043,7 @@ function notify(text, color, duration)
 end
 GENV._ORBIT_AC_NOTIFY = notify
 
--- ==================== ОБРАБОТЧИКИ КНОПОК ====================
+-- ==================== ОБРАБОТЧИКИ ====================
 local dragging, dragMoved = false, false
 local dragStart, startPos
 
@@ -1192,15 +1170,10 @@ end)
 testSfxBtn.Activated:Connect(function()
     testSfxBtn.Text = "⏳ Проигрываю..."
     task.wait(0.1)
-
-    -- 1. Клик
     playClick()
     task.wait(0.5)
-
-    -- 2. Санс + смех + уворот (полная последовательность)
     playSansDodge()
     task.wait(2.5)
-
     testSfxBtn.Text = "✅ Готово"
     task.wait(2)
     testSfxBtn.Text = "🎵 Проверить звуки"
@@ -1273,7 +1246,6 @@ unloadBtn.Activated:Connect(function()
     pcall(function() GENV._ORBIT_AC_UNLOAD() end)
 end)
 
--- ==================== UNLOAD ====================
 GENV._ORBIT_AC_UNLOAD = function()
     disableProtection()
     if screenGui then pcall(function() screenGui:Destroy() end) end
@@ -1284,7 +1256,6 @@ GENV._ORBIT_AC_UNLOAD = function()
     print("[OrbitAC] Выгружен")
 end
 
--- ==================== СТАТИСТИКА ====================
 task.spawn(function()
     while screenGui and screenGui.Parent do
         task.wait(0.5)
@@ -1302,7 +1273,6 @@ task.spawn(function()
     end
 end)
 
--- ==================== ГОРЯЧАЯ КЛАВИША ====================
 game:GetService("UserInputService").InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.KeyCode == Enum.KeyCode.K then
@@ -1325,23 +1295,18 @@ GENV._ORBIT_AC_TOGGLE = function()
     end
 end
 
--- ==================== АВТОЗАПУСК ====================
 task.spawn(function()
     task.wait(1)
-    notify("🛡 ORBIT ANTI-CHEAT v10.5 загружен", Color3.fromRGB(255, 200, 200), 3)
+    notify("🛡 ORBIT ANTI-CHEAT v10.6 загружен", Color3.fromRGB(255, 200, 200), 3)
     task.wait(0.3)
-    notify("🎵 Все звуки: Санс + смех + уворот", Color3.fromRGB(255, 180, 255), 3)
+    notify("🔧 Smart Floor ФИКС применён", Color3.fromRGB(160, 255, 180), 3)
     task.wait(0.3)
     notify("🎮 K — вкл/выкл защиту", Color3.fromRGB(200, 220, 255), 3)
 end)
 
-print("[Orbit Anti-Cheat v10.5] ═══════════════════════════")
-print("[Orbit Anti-Cheat v10.5] Автономный скрипт запущен ✅")
-print("[Orbit Anti-Cheat v10.5] Звуки загружены:")
-print("[Orbit Anti-Cheat v10.5]   🎤 Санс: 135692693675195")
-print("[Orbit Anti-Cheat v10.5]   😂 Смех: 113650760423588")
-print("[Orbit Anti-Cheat v10.5]   💨 Уворот: 140721035016341")
-print("[Orbit Anti-Cheat v10.5]   💨 После: 6325779988")
-print("[Orbit Anti-Cheat v10.5] ═══════════════════════════")
+print("[Orbit Anti-Cheat v10.6] ═══════════════════════════")
+print("[Orbit Anti-Cheat v10.6] Автономный скрипт запущен ✅")
+print("[Orbit Anti-Cheat v10.6] Smart Floor ФИКС: isGrounded + кулдаун 3 сек")
+print("[Orbit Anti-Cheat v10.6] ═══════════════════════════")
 
 return true
