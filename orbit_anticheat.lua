@@ -1,33 +1,26 @@
 --[[ ═══════════════════════════════════════════════════════════
-     ORBIT ANTI-CHEAT — Полностью автономный скрипт
+     ORBIT ANTI-CHEAT — Полностью автономный скрипт v10.5
      ═══════════════════════════════════════════════════════════
      НЕ зависит от ОРБИТЫ
-     Свои настройки, свой UI, своя кнопка ✨
+     Свои настройки, свой UI, своя кнопка 🛡
      
-     Функции:
-     - Anti-Fling (защита от флинга)
-     - Anti-Void + Smart Floor (спасение из пустоты)
-     - Anti-Teleport
-     - Anti-Knockback
-     - Anti-Freeze
-     - Anti-Anchor
-     - Anti-InstantKill
-     - Anti-DropKick
-     - Anti-Explosion
-     - Auto-Heal
-     - Lock Position
-     - Auto-Dodge
-     - Reverse Fling (ответка)
-     - Speed-Hack детект
-     - Пометка читеров
+     🆕 ЗВУКИ:
+     - 135692693675195 — 🎤 голос Санса
+     - 113650760423588 — 😂 смех
+     - 140721035016341 — 💨 уворот
+     - 6325779988      — 💨 после уворота
+     
+     Звуки играют:
+     - 🥷 При Auto-Dodge (уклонение)
+     - 🛡 При Smart Floor (спасение от падения)
+     - 🚨 При Reverse Fling (ответка)
+     - 🖱 При кликах по кнопкам
+     - 🚩 При пометке читера
      
      Запуск:
      loadstring(game:HttpGet("https://raw.githubusercontent.com/y7hdyvdmr/my-orbit-script/refs/heads/main/orbit_anticheat.lua"))()
      ═══════════════════════════════════════════════════════════ ]]
 
--- ============================================================
---                    ЗАЩИТА ОТ ПОВТОРНОГО ЗАПУСКА
--- ============================================================
 local GENV = rawget(_G, "getgenv") and getgenv() or _G
 if GENV._ORBIT_AC_LOADED then
     warn("[Orbit AC] Уже запущен! Выгружаю старый...")
@@ -35,9 +28,6 @@ if GENV._ORBIT_AC_LOADED then
 end
 GENV._ORBIT_AC_LOADED = true
 
--- ============================================================
---                    СЕРВИСЫ
--- ============================================================
 local Players      = game:GetService("Players")
 local RunService   = game:GetService("RunService")
 local Workspace    = game:GetService("Workspace")
@@ -46,9 +36,7 @@ local TweenService = game:GetService("TweenService")
 local LocalPlayer  = Players.LocalPlayer
 local PlayerGui    = LocalPlayer:WaitForChild("PlayerGui")
 
--- ============================================================
---                    БЕЗОПАСНЫЙ PARENT
--- ============================================================
+-- ==================== БЕЗОПАСНЫЙ PARENT ====================
 local function getSafeParent()
     local gethuiFn = rawget(GENV, "gethui")
     if type(gethuiFn) == "function" then
@@ -72,15 +60,11 @@ local function protectGui(gui)
     end
 end
 
--- ============================================================
---                    НАСТРОЙКИ
--- ============================================================
+-- ==================== НАСТРОЙКИ ====================
 local SETTINGS = {
-    -- Основное
     Enabled           = false,
     SoundEnabled      = true,
 
-    -- Защита
     AntiFling         = true,
     AntiVoid          = true,
     AntiTeleport      = true,
@@ -92,25 +76,17 @@ local SETTINGS = {
     AntiExplosion     = true,
     DisableFallDamage = true,
 
-    -- Утилиты
     AutoHeal          = false,
     AutoHealValue     = 100,
     LockPosition      = false,
 
-    -- Auto-Dodge
     DodgeEnabled      = false,
-
-    -- Reverse Fling
     ReverseFlingEnabled = false,
 
-    -- Детект
     DetectSpeedHack   = true,
     DetectGodMode     = true,
 
-    -- Smart Floor
     SmartFloorY       = 5,
-
-    -- Настройки UI
     UIButtonPos       = UDim2.new(0, 20, 0, 200),
 }
 
@@ -124,54 +100,135 @@ local SESSION = {
 local TAGGED = {}
 local CHEATERS_LOG = {}
 
--- ============================================================
---                    ЗВУКИ (автономные)
--- ============================================================
+-- ==================== ЗВУКИ ====================
 local sfxFolder = Instance.new("Folder")
 sfxFolder.Name = "OrbitAC_Sfx_" .. tostring(math.random(100000, 999999))
 sfxFolder.Parent = SoundService
 
-local function playSound(id, volume, pitch)
-    if not SETTINGS.SoundEnabled then return end
+-- 🆕 ВСЕ ID
+local SOUND_IDS = {
+    click       = "rbxasset://sounds/button.wav",
+    switch      = "rbxasset://sounds/switch.wav",
+    ping        = "rbxasset://sounds/electronicpingshort.wav",
+    snap        = "rbxasset://sounds/snap.mp3",
+
+    -- Твои кастомные
+    dodge       = "rbxassetid://140721035016341",  -- 💨 уворот
+    afterDodge  = "rbxassetid://6325779988",       -- 💨 после уворота
+    sans        = "rbxassetid://135692693675195",  -- 🎤 Санс
+    laugh       = "rbxassetid://113650760423588",  -- 😂 смех
+    botCollect  = "rbxassetid://12221967",         -- 🎁 сбор бота
+}
+
+local sfxTemplates = {}
+for name, id in pairs(SOUND_IDS) do
+    local s = Instance.new("Sound")
+    s.Name = name
+    s.SoundId = id
+    s.Volume = 0.5
+    s.Parent = sfxFolder
+    sfxTemplates[name] = s
+end
+
+task.spawn(function()
     pcall(function()
-        local s = Instance.new("Sound")
-        s.SoundId = id
-        s.Volume = volume or 0.5
-        if pitch then s.PlaybackSpeed = pitch end
+        game:GetService("ContentProvider"):PreloadAsync(sfxFolder:GetChildren())
+    end)
+end)
+
+local lastPlay = {}
+local function playSound(name, volume, pitch)
+    if not SETTINGS.SoundEnabled then return end
+    local tpl = sfxTemplates[name]
+    if not tpl then return end
+
+    local now = os.clock()
+    if lastPlay[name] and now - lastPlay[name] < 0.04 then return end
+    lastPlay[name] = now
+
+    pcall(function()
+        local s = tpl:Clone()
+        s.Volume = (volume or 1) * tpl.Volume
+        s.PlaybackSpeed = pitch or 1
         s.Parent = sfxFolder
         s:Play()
-        task.delay(3, function() pcall(function() s:Destroy() end) end)
+        game:GetService("Debris"):AddItem(s, 6)
     end)
 end
 
-local function playClick() playSound("rbxasset://sounds/button.wav", 0.5) end
-local function playSwitch() playSound("rbxasset://sounds/switch.wav", 0.5) end
-local function playPing() playSound("rbxasset://sounds/electronicpingshort.wav", 0.4) end
+-- Хелперы
+local function playClick() playSound("click", 0.5) end
+local function playSwitch() playSound("switch", 0.5) end
+local function playPing() playSound("ping", 0.5) end
 
--- ============================================================
---                    СОСТОЯНИЕ
--- ============================================================
+-- 🆕 Полная последовательность уворота с Сансом
+local function playSansDodge()
+    if not SETTINGS.SoundEnabled then return end
+
+    -- 1. Звук уворота (сразу)
+    playSound("dodge", 1, 1)
+
+    -- 2. После уворота (0.3 сек)
+    task.delay(0.3, function()
+        playSound("afterDodge", 1, 1)
+    end)
+
+    -- 3. Санс + смех + эмоция Laugh (0.6 сек)
+    task.delay(0.6, function()
+        -- Эмоция Laugh (с авто-сбросом через 2 сек)
+        pcall(function()
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if not hum then return end
+            hum:PlayEmote("Laugh")
+
+            task.delay(2, function()
+                pcall(function()
+                    local animator = hum:FindFirstChildOfClass("Animator")
+                    if not animator then return end
+                    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                        local nm = track.Animation and track.Animation.Name or ""
+                        if nm:lower():find("laugh") or nm:lower():find("emote") then
+                            track:Stop(0)
+                        end
+                    end
+                end)
+            end)
+        end)
+
+        -- 🎤 Голос Санса
+        playSound("sans", 1, 1)
+
+        -- 😂 Смех (через 0.15 сек)
+        task.delay(0.15, function()
+            playSound("laugh", 0.8, 1)
+        end)
+    end)
+end
+
+-- 🆕 Звук при спасении (падение в пустоту)
+local function playSmartFloorSound()
+    if not SETTINGS.SoundEnabled then return end
+    -- Восходящий звук — "уф, спасло"
+    playSound("ping", 0.7, 1.3)
+    task.delay(0.15, function()
+        playSound("afterDodge", 0.6, 1.2)
+    end)
+end
+
+-- 🆕 Звук при пометке читера
+local function playCheaterTagSound()
+    if not SETTINGS.SoundEnabled then return end
+    playSound("laugh", 0.5, 0.8)  -- зловещий смех
+end
+
+-- ==================== СОСТОЯНИЕ ====================
 local STATE = {
-    lastSafePos = nil,
-    lastSafeCFrame = nil,
-    lastCheckTime = 0,
-    lastHealTime = 0,
-    lastHealth = 100,
-    lastKnockTime = 0,
-    lastFreezeTime = 0,
-    spawnGrace = 0,
-    lastHealthCheck = 0,
-    lastScan = 0,
-    lastPositions = {},
-    godmodeWarned = {},
-    voidTimer = 0,
-    lastFloorCheck = 0,
-    lastHRP = nil,
-    dropkickWarned = {},
-    cframeJumpCounter = 0,
-    blockedFlingCount = 0,
-    groundTimer = 0,
-    charConn = nil,
+    lastSafePos = nil, lastSafeCFrame = nil, lastCheckTime = 0, lastHealTime = 0,
+    lastHealth = 100, lastKnockTime = 0, lastFreezeTime = 0, spawnGrace = 0,
+    lastHealthCheck = 0, lastScan = 0, lastPositions = {}, godmodeWarned = {},
+    voidTimer = 0, lastFloorCheck = 0, lastHRP = nil, dropkickWarned = {},
+    cframeJumpCounter = 0, blockedFlingCount = 0, groundTimer = 0, charConn = nil,
 }
 
 local CFG = {
@@ -208,12 +265,8 @@ LocalPlayer.CharacterAdded:Connect(function(c)
     if h then ORIG_WS, ORIG_JP = h.WalkSpeed, h.JumpPower end
 end)
 
--- ============================================================
---                    УТИЛИТЫ
--- ============================================================
-local function log(text)
-    print("[OrbitAC] " .. text)
-end
+-- ==================== УТИЛИТЫ ====================
+local function log(text) print("[OrbitAC] " .. text) end
 
 local function killObject(obj)
     if not obj or not obj.Parent then return end
@@ -293,9 +346,7 @@ local function getSafeFloorPosition()
     return Vector3.new(0, 50, 0)
 end
 
--- ============================================================
---                    ФУНКЦИИ ЗАЩИТЫ
--- ============================================================
+-- ==================== ФУНКЦИИ ЗАЩИТЫ ====================
 local function disableFallDamage(char)
     if not SETTINGS.DisableFallDamage then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
@@ -466,6 +517,8 @@ local function antiVoid(char, hrp, dt)
                 resetVelocity(char)
             end)
             warn("[OrbitAC] Smart Floor спас с Y=" .. math.floor(y))
+            -- 🆕 Звук при спасении
+            playSmartFloorSound()
             notify("🛡 Smart Floor спас!", Color3.fromRGB(120, 255, 180), 2)
             SESSION.protectionsTriggered = SESSION.protectionsTriggered + 1
         end
@@ -507,9 +560,7 @@ local function lockPosition(char, hrp)
     if STATE.lastSafeCFrame then pcall(function() char:PivotTo(STATE.lastSafeCFrame) end) end
 end
 
--- ============================================================
---                    AUTO-DODGE
--- ============================================================
+-- ==================== AUTO-DODGE ====================
 local dodgeConn = nil
 local dodgeParams = OverlapParams.new()
 dodgeParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -568,14 +619,14 @@ local function setupAutoDodge()
         end)
         DODGE.LastDodge = now
         SESSION.dodgesMade = SESSION.dodgesMade + 1
-        playPing()
+
+        -- 🆕 Санс + смех + уворот
+        playSansDodge()
         notify("🥷 Уклонение!", Color3.fromRGB(150, 220, 255), 1.5)
     end)
 end
 
--- ============================================================
---                    REVERSE FLING
--- ============================================================
+-- ==================== REVERSE FLING ====================
 local function reverseFlingPlayer(player)
     if not player or player == LocalPlayer then return end
     local char = player.Character
@@ -616,18 +667,16 @@ local function scanForFlingers()
     end
 end
 
--- ============================================================
---                    МЕТКА ЧИТЕРА
--- ============================================================
+-- ==================== МЕТКА ЧИТЕРА ====================
 function tagCheater(player, enable)
     if not player or player == LocalPlayer then return false end
     if enable then
         TAGGED[player] = true
-        CHEATERS_LOG[player.UserId] = {
-            name = player.Name, time = os.time(),
-        }
+        CHEATERS_LOG[player.UserId] = { name = player.Name, time = os.time() }
         SESSION.cheatersTagged = SESSION.cheatersTagged + 1
         warn("[OrbitAC] Помечен: " .. player.Name)
+        -- 🆕 Звук при пометке
+        playCheaterTagSound()
         notify("🚩 Помечен: " .. player.Name, Color3.fromRGB(255, 120, 120))
     else
         TAGGED[player] = nil
@@ -642,9 +691,7 @@ end
 
 function isTagged(player) return TAGGED[player] == true end
 
--- ============================================================
---                    ОСНОВНОЙ ЦИКЛ ЗАЩИТЫ
--- ============================================================
+-- ==================== ОСНОВНОЙ ЦИКЛ ====================
 local function processProtection(dt, char, hrp)
     local now = tick()
     local airborne = isAirborne(hrp)
@@ -726,9 +773,7 @@ local function processProtection(dt, char, hrp)
     end
 end
 
--- ============================================================
---                    ВКЛ/ВЫКЛ
--- ============================================================
+-- ==================== ВКЛ/ВЫКЛ ====================
 local protConn = nil
 
 local function enableProtection()
@@ -782,7 +827,6 @@ local function disableProtection()
     STATE.lastSafePos = nil; STATE.lastSafeCFrame = nil
 end
 
--- Anti-Explosion
 Workspace.DescendantAdded:Connect(function(inst)
     if not SETTINGS.Enabled or not SETTINGS.AntiExplosion then return end
     if inst:IsA("Explosion") then
@@ -790,9 +834,7 @@ Workspace.DescendantAdded:Connect(function(inst)
     end
 end)
 
--- ============================================================
---                    UI
--- ============================================================
+-- ==================== UI ====================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "_OrbitAC_" .. tostring(math.random(100000, 999999))
 screenGui.ResetOnSpawn = false
@@ -803,7 +845,6 @@ protectGui(screenGui)
 local okp = pcall(function() screenGui.Parent = getSafeParent() end)
 if not okp or not screenGui.Parent then screenGui.Parent = PlayerGui end
 
--- Кнопка
 local mainBtn = Instance.new("TextButton")
 mainBtn.Size = UDim2.new(0, 56, 0, 56)
 mainBtn.Position = SETTINGS.UIButtonPos
@@ -820,7 +861,6 @@ local mainStroke = Instance.new("UIStroke", mainBtn)
 mainStroke.Color = Color3.fromRGB(255, 100, 100)
 mainStroke.Thickness = 1.5
 
--- Панель
 local panel = Instance.new("ScrollingFrame")
 panel.Size = UDim2.new(0, 300, 0, 600)
 panel.Position = UDim2.new(0, 90, 0, 60)
@@ -840,18 +880,16 @@ panelStroke.Thickness = 1
 local panelScale = Instance.new("UIScale")
 panelScale.Parent = panel
 
--- Заголовок
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.Position = UDim2.new(0, 0, 0, 6)
 title.BackgroundTransparency = 1
-title.Text = "🛡  ORBIT ANTI-CHEAT"
+title.Text = "🛡  ORBIT ANTI-CHEAT v10.5"
 title.TextColor3 = Color3.fromRGB(255, 200, 200)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 15
 title.Parent = panel
 
--- Хелперы
 local function makeSection(text, y, color)
     local holder = Instance.new("Frame")
     holder.Size = UDim2.new(1, -20, 0, 28)
@@ -903,11 +941,9 @@ local function makeButton(text, y, h, bgColor, textColor)
     return b
 end
 
--- ОСНОВНОЕ
 makeSection("⚡  ОСНОВНОЕ", 42, Color3.fromRGB(80, 40, 40))
 local toggleBtn = makeButton("🔴 ВЫКЛЮЧЕНО", 74, 36, Color3.fromRGB(50, 35, 40), Color3.fromRGB(255, 80, 80))
 
--- СТАТИСТИКА
 makeSection("📊  СТАТИСТИКА", 118, Color3.fromRGB(60, 60, 90))
 local statsLabel = Instance.new("TextLabel")
 statsLabel.Size = UDim2.new(1, -20, 0, 90)
@@ -924,7 +960,6 @@ statsLabel.Text = "Загрузка..."
 statsLabel.Parent = panel
 Instance.new("UICorner", statsLabel).CornerRadius = UDim.new(0, 6)
 
--- ЗАЩИТА
 makeSection("🛡️  ЗАЩИТА", 248, Color3.fromRGB(60, 100, 60))
 local antiFlingBtn    = makeButton("🛡️ Anti-Fling: ВКЛ", 280, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
 local antiVoidBtn     = makeButton("🛡️ Anti-Void: ВКЛ", 314, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
@@ -936,38 +971,32 @@ local antiKillBtn     = makeButton("🛡️ Anti-InstantKill: ВКЛ", 484, 30, 
 local antiExpBtn      = makeButton("🛡️ Anti-Explosion: ВКЛ", 518, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
 local noFallDmgBtn    = makeButton("🛡️ No Fall Damage: ВКЛ", 552, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
 
--- УТИЛИТЫ
 makeSection("💚  УТИЛИТЫ", 594, Color3.fromRGB(80, 100, 60))
 local autoHealBtn = makeButton("💚 Auto-Heal: ВЫКЛ", 626, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
 local lockPosBtn  = makeButton("📍 Lock Position: ВЫКЛ", 660, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
 
--- ДОП. ЗАЩИТА
 makeSection("🥷  ДОП. ЗАЩИТА", 702, Color3.fromRGB(80, 60, 130))
 local dodgeBtn   = makeButton("🥷 Auto-Dodge: ВЫКЛ", 734, 32, Color3.fromRGB(50,50,50), Color3.fromRGB(200,200,200))
 local reverseBtn = makeButton("🚨 Reverse Fling: ВЫКЛ", 770, 30, Color3.fromRGB(60,30,30), Color3.fromRGB(255,150,150))
 
--- ДЕТЕКТ
 makeSection("👁️  ДЕТЕКТ ЧИТЕРОВ", 812, Color3.fromRGB(100, 60, 60))
 local speedHackBtn = makeButton("⚡ Speed-Hack детект: ВКЛ", 844, 30, Color3.fromRGB(50,40,40), Color3.fromRGB(255,180,180))
 local godModeBtn   = makeButton("👁️ GodMode детект: ВКЛ", 878, 30, Color3.fromRGB(50,40,40), Color3.fromRGB(255,180,180))
 local listCheatersBtn = makeButton("📋 Список читеров: 0", 912, 28, Color3.fromRGB(60,35,45), Color3.fromRGB(255,180,220))
 
--- ЗВУКИ
 makeSection("🔊  ЗВУКИ", 952, Color3.fromRGB(70, 80, 110))
 local soundBtn = makeButton("🔊 Звуки: ВКЛ", 984, 30, Color3.fromRGB(35,60,45), Color3.fromRGB(180,255,180))
+local testSfxBtn = makeButton("🎵 Проверить звуки", 1018, 30, Color3.fromRGB(50,60,90), Color3.fromRGB(200,220,255))
 
--- СИСТЕМА
-makeSection("💾  СИСТЕМА", 1026, Color3.fromRGB(60, 60, 80))
-local saveBtn  = makeButton("💾 Сохранить настройки", 1058, 30, Color3.fromRGB(35,60,45), Color3.fromRGB(160,255,180))
-local loadBtn  = makeButton("📂 Загрузить настройки", 1092, 30, Color3.fromRGB(35,50,60), Color3.fromRGB(180,220,255))
-local resetBtn = makeButton("🔄 Сбросить всё", 1126, 30, Color3.fromRGB(50,30,30), Color3.fromRGB(255,180,180))
-local unloadBtn = makeButton("❌ ВЫГРУЗИТЬ", 1160, 32, Color3.fromRGB(80,30,30), Color3.fromRGB(255,140,140))
+makeSection("💾  СИСТЕМА", 1060, Color3.fromRGB(60, 60, 80))
+local saveBtn  = makeButton("💾 Сохранить настройки", 1092, 30, Color3.fromRGB(35,60,45), Color3.fromRGB(160,255,180))
+local loadBtn  = makeButton("📂 Загрузить настройки", 1126, 30, Color3.fromRGB(35,50,60), Color3.fromRGB(180,220,255))
+local resetBtn = makeButton("🔄 Сбросить всё", 1160, 30, Color3.fromRGB(50,30,30), Color3.fromRGB(255,180,180))
+local unloadBtn = makeButton("❌ ВЫГРУЗИТЬ", 1194, 32, Color3.fromRGB(80,30,30), Color3.fromRGB(255,140,140))
 
-panel.CanvasSize = UDim2.new(0, 0, 0, 1210)
+panel.CanvasSize = UDim2.new(0, 0, 0, 1245)
 
--- ============================================================
---                    УВЕДОМЛЕНИЯ
--- ============================================================
+-- ==================== УВЕДОМЛЕНИЯ ====================
 local notifHolder = Instance.new("Frame")
 notifHolder.Size = UDim2.new(0, 300, 0.4, 0)
 notifHolder.Position = UDim2.new(1, -320, 0.15, 0)
@@ -1036,9 +1065,7 @@ function notify(text, color, duration)
 end
 GENV._ORBIT_AC_NOTIFY = notify
 
--- ============================================================
---                    ОБРАБОТЧИКИ КНОПОК
--- ============================================================
+-- ==================== ОБРАБОТЧИКИ КНОПОК ====================
 local dragging, dragMoved = false, false
 local dragStart, startPos
 
@@ -1075,7 +1102,6 @@ game:GetService("UserInputService").InputEnded:Connect(function(input)
     end
 end)
 
--- Открытие/закрытие
 local panelOpen = false
 local function setPanel(open)
     panelOpen = open
@@ -1101,7 +1127,6 @@ mainBtn.Activated:Connect(function()
     setPanel(not panelOpen)
 end)
 
--- Основное
 toggleBtn.Activated:Connect(function()
     SETTINGS.Enabled = not SETTINGS.Enabled
     playSwitch()
@@ -1119,7 +1144,6 @@ toggleBtn.Activated:Connect(function()
     end
 end)
 
--- Защита
 antiFlingBtn.Activated:Connect(function() SETTINGS.AntiFling = not SETTINGS.AntiFling; antiFlingBtn.Text = "🛡️ Anti-Fling: " .. (SETTINGS.AntiFling and "ВКЛ" or "ВЫКЛ") end)
 antiVoidBtn.Activated:Connect(function() SETTINGS.AntiVoid = not SETTINGS.AntiVoid; antiVoidBtn.Text = "🛡️ Anti-Void: " .. (SETTINGS.AntiVoid and "ВКЛ" or "ВЫКЛ") end)
 antiTpBtn.Activated:Connect(function() SETTINGS.AntiTeleport = not SETTINGS.AntiTeleport; antiTpBtn.Text = "🛡️ Anti-Teleport: " .. (SETTINGS.AntiTeleport and "ВКЛ" or "ВЫКЛ") end)
@@ -1130,11 +1154,9 @@ antiKillBtn.Activated:Connect(function() SETTINGS.AntiInstantKill = not SETTINGS
 antiExpBtn.Activated:Connect(function() SETTINGS.AntiExplosion = not SETTINGS.AntiExplosion; antiExpBtn.Text = "🛡️ Anti-Explosion: " .. (SETTINGS.AntiExplosion and "ВКЛ" or "ВЫКЛ") end)
 noFallDmgBtn.Activated:Connect(function() SETTINGS.DisableFallDamage = not SETTINGS.DisableFallDamage; noFallDmgBtn.Text = "🛡️ No Fall Damage: " .. (SETTINGS.DisableFallDamage and "ВКЛ" or "ВЫКЛ") end)
 
--- Утилиты
 autoHealBtn.Activated:Connect(function() SETTINGS.AutoHeal = not SETTINGS.AutoHeal; autoHealBtn.Text = "💚 Auto-Heal: " .. (SETTINGS.AutoHeal and "ВКЛ" or "ВЫКЛ") end)
 lockPosBtn.Activated:Connect(function() SETTINGS.LockPosition = not SETTINGS.LockPosition; lockPosBtn.Text = "📍 Lock Position: " .. (SETTINGS.LockPosition and "ВКЛ" or "ВЫКЛ") end)
 
--- Доп
 dodgeBtn.Activated:Connect(function()
     DODGE.Enabled = not DODGE.Enabled
     dodgeBtn.Text = "🥷 Auto-Dodge: " .. (DODGE.Enabled and "ВКЛ" or "ВЫКЛ")
@@ -1146,7 +1168,6 @@ reverseBtn.Activated:Connect(function()
     reverseBtn.BackgroundColor3 = REVERSE.Enabled and Color3.fromRGB(100,30,30) or Color3.fromRGB(60,30,30)
 end)
 
--- Детект
 speedHackBtn.Activated:Connect(function() SETTINGS.DetectSpeedHack = not SETTINGS.DetectSpeedHack; speedHackBtn.Text = "⚡ Speed-Hack детект: " .. (SETTINGS.DetectSpeedHack and "ВКЛ" or "ВЫКЛ") end)
 godModeBtn.Activated:Connect(function() SETTINGS.DetectGodMode = not SETTINGS.DetectGodMode; godModeBtn.Text = "👁️ GodMode детект: " .. (SETTINGS.DetectGodMode and "ВКЛ" or "ВЫКЛ") end)
 
@@ -1162,14 +1183,29 @@ listCheatersBtn.Activated:Connect(function()
     end
 end)
 
--- Звуки
 soundBtn.Activated:Connect(function()
     SETTINGS.SoundEnabled = not SETTINGS.SoundEnabled
     soundBtn.Text = "🔊 Звуки: " .. (SETTINGS.SoundEnabled and "ВКЛ" or "ВЫКЛ")
     if SETTINGS.SoundEnabled then playSwitch() end
 end)
 
--- Система
+testSfxBtn.Activated:Connect(function()
+    testSfxBtn.Text = "⏳ Проигрываю..."
+    task.wait(0.1)
+
+    -- 1. Клик
+    playClick()
+    task.wait(0.5)
+
+    -- 2. Санс + смех + уворот (полная последовательность)
+    playSansDodge()
+    task.wait(2.5)
+
+    testSfxBtn.Text = "✅ Готово"
+    task.wait(2)
+    testSfxBtn.Text = "🎵 Проверить звуки"
+end)
+
 local SAVE_FILE = "orbit_ac_settings.json"
 local HAS_FS = (writefile and readfile and isfile and type(writefile) == "function")
 
@@ -1237,9 +1273,7 @@ unloadBtn.Activated:Connect(function()
     pcall(function() GENV._ORBIT_AC_UNLOAD() end)
 end)
 
--- ============================================================
---                    UNLOAD
--- ============================================================
+-- ==================== UNLOAD ====================
 GENV._ORBIT_AC_UNLOAD = function()
     disableProtection()
     if screenGui then pcall(function() screenGui:Destroy() end) end
@@ -1250,9 +1284,7 @@ GENV._ORBIT_AC_UNLOAD = function()
     print("[OrbitAC] Выгружен")
 end
 
--- ============================================================
---                    ОБНОВЛЕНИЕ СТАТИСТИКИ
--- ============================================================
+-- ==================== СТАТИСТИКА ====================
 task.spawn(function()
     while screenGui and screenGui.Parent do
         task.wait(0.5)
@@ -1270,9 +1302,7 @@ task.spawn(function()
     end
 end)
 
--- ============================================================
---                    ГОРЯЧАЯ КЛАВИША
--- ============================================================
+-- ==================== ГОРЯЧАЯ КЛАВИША ====================
 game:GetService("UserInputService").InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.KeyCode == Enum.KeyCode.K then
@@ -1295,19 +1325,23 @@ GENV._ORBIT_AC_TOGGLE = function()
     end
 end
 
--- ============================================================
---                    АВТОЗАПУСК
--- ============================================================
+-- ==================== АВТОЗАПУСК ====================
 task.spawn(function()
     task.wait(1)
-    notify("🛡 ORBIT ANTI-CHEAT загружен", Color3.fromRGB(255, 200, 200), 3)
+    notify("🛡 ORBIT ANTI-CHEAT v10.5 загружен", Color3.fromRGB(255, 200, 200), 3)
     task.wait(0.3)
-    notify("🎮 Клавиша K — вкл/выкл", Color3.fromRGB(200, 220, 255), 3)
+    notify("🎵 Все звуки: Санс + смех + уворот", Color3.fromRGB(255, 180, 255), 3)
+    task.wait(0.3)
+    notify("🎮 K — вкл/выкл защиту", Color3.fromRGB(200, 220, 255), 3)
 end)
 
-print("[Orbit Anti-Cheat] ═══════════════════════════")
-print("[Orbit Anti-Cheat] Автономный скрипт запущен ✅")
-print("[Orbit Anti-Cheat] Клавиша K — вкл/выкл защиту")
-print("[Orbit Anti-Cheat] ═══════════════════════════")
+print("[Orbit Anti-Cheat v10.5] ═══════════════════════════")
+print("[Orbit Anti-Cheat v10.5] Автономный скрипт запущен ✅")
+print("[Orbit Anti-Cheat v10.5] Звуки загружены:")
+print("[Orbit Anti-Cheat v10.5]   🎤 Санс: 135692693675195")
+print("[Orbit Anti-Cheat v10.5]   😂 Смех: 113650760423588")
+print("[Orbit Anti-Cheat v10.5]   💨 Уворот: 140721035016341")
+print("[Orbit Anti-Cheat v10.5]   💨 После: 6325779988")
+print("[Orbit Anti-Cheat v10.5] ═══════════════════════════")
 
 return true
