@@ -1,21 +1,20 @@
 --[[ ═══════════════════════════════════════════════════════════════
-     ОРБИТА АНТИ-ЧИТ v11.2 — ПОЛНАЯ ВЕРСИЯ НА РУССКОМ
+     ОРБИТА АНТИ-ЧИТ v12.0 — ПОЛНАЯ ВЕРСИЯ НА РУССКОМ
      ═══════════════════════════════════════════════════════════════
-     НЕ зависит от ОРБИТЫ
+     ✅ Все переменные латиницей (Lua-совместимо)
+     ✅ Интерфейс, уведомления, комментарии — на русском
+     ✅ НЕ зависит от ОРБИТЫ
      
-     🆕 Что нового:
-     - Визуальная сфера (видна только тебе)
-     - ДЕТЕКТ ВТОРЖЕНИЯ — игрок зашёл в сферу → уведомление + звук
-     - Anti-SuperRing (удаляет AlignPosition/Torque)
-     - Очередь звуков (без наложения)
-     - Улучшенный Умный Пол
-     
-     ⚠️ ВАЖНО:
-     Физический барьер для ДРУГИХ игроков из клиента невозможен.
-     Сфера работает как радиус детекта — мы отслеживаем вход игроков.
+     🆕 Что нового в v12.0:
+     - Anti-Homelander (детект огромных BodyVelocity/LinearVelocity)
+     - Anti-Grab (снятие чужих Weld/Motor6D)
+     - Anti-Ragdoll (выход из Physics/Ragdoll)
+     - Anti-Killaura (резкие удары по мне без ответа)
+     - Исправлен баг с текстом уведомлений
+     - Все кириллические идентификаторы → латиница
      
      Запуск:
-     loadstring(game:HttpGet("https://raw.githubusercontent.com/y7hdyvdmr/my-orbit-script/refs/heads/main/orbit_anticheat.lua"))()
+     loadstring(game:HttpGet("https://raw.githubusercontent.com/y7hdyvdmr/orbit_anticheat.lua/refs/heads/main/orbit_anticheat.lua?t=" .. os.time()))()
      ═══════════════════════════════════════════════════════════════ ]]
 
 -- ==================== ЗАЩИТА ОТ ПОВТОРНОГО ЗАПУСКА ====================
@@ -27,13 +26,17 @@ end
 GENV._ORBIT_AC_LOADED = true
 
 -- ==================== СЕРВИСЫ ====================
-local Players      = game:GetService("Players")
-local RunService   = game:GetService("RunService")
-local Workspace    = game:GetService("Workspace")
-local SoundService = game:GetService("SoundService")
-local TweenService = game:GetService("TweenService")
-local LocalPlayer  = Players.LocalPlayer
-local PlayerGui    = LocalPlayer:WaitForChild("PlayerGui")
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local Workspace        = game:GetService("Workspace")
+local SoundService     = game:GetService("SoundService")
+local TweenService     = game:GetService("TweenService")
+local HttpService      = game:GetService("HttpService")
+local ContentProvider  = game:GetService("ContentProvider")
+local Debris           = game:GetService("Debris")
+local UIS              = game:GetService("UserInputService")
+local LocalPlayer      = Players.LocalPlayer
+local PlayerGui        = LocalPlayer:WaitForChild("PlayerGui")
 
 -- ==================== БЕЗОПАСНОЕ РОДИТЕЛЬСКОЕ ОКНО ====================
 local function getSafeParent()
@@ -60,150 +63,153 @@ local function protectGui(gui)
 end
 
 -- ==================== НАСТРОЙКИ ====================
-local НАСТРОЙКИ = {
-    Включено           = false,
-    Звуки              = true,
+local SETTINGS = {
+    Enabled            = false,
+    Sounds             = true,
 
     -- Защита
-    АнтиФлинг          = true,
-    АнтиПустота        = true,
-    АнтиТелепорт       = true,
-    АнтиОтбрасывание   = true,
-    АнтиЗаморозка      = true,
-    АнтиЯкорь          = true,
-    АнтиМгновСмерть    = true,
-    АнтиДропКик        = true,
-    АнтиВзрыв          = true,
-    АнтиСуперКольцо    = true,
-    УбратьУронПадения  = true,
+    AntiFling          = true,
+    AntiVoid           = true,
+    AntiTeleport       = true,
+    AntiKnockback      = true,
+    AntiFreeze         = true,
+    AntiAnchor         = true,
+    AntiInstantKill    = true,
+    AntiDropKick       = true,
+    AntiExplosion      = true,
+    AntiSuperRing      = true,
+    AntiHomelander     = true,   -- 🆕
+    AntiGrab           = true,   -- 🆕
+    AntiRagdoll        = true,   -- 🆕
+    AntiKillaura       = true,   -- 🆕
+    NoFallDamage       = true,
 
     -- Утилиты
-    АвтоЛечение       = false,
-    СилаЛечения        = 100,
-    БлокировкаПозиции  = false,
+    AutoHeal           = false,
+    HealPower          = 100,
+    LockPosition       = false,
 
     -- Визуал
-    ВизуальнаяСфера    = false,
-    РазмерСферы        = 8,
-    ДетектВторжения    = true,   -- 🆕 Следим за входом в сферу
+    VisualSphere       = false,
+    SphereSize         = 8,
+    IntrusionDetect    = true,
 
     -- Уклонение
-    Уклонение          = false,
-    ДетектТроллинга    = true,
+    Dodge              = false,
+    TrollDetect        = true,
 
     -- Ответный флинг
-    ОтветныйФлинг      = false,
+    ReverseFling       = false,
 
     -- Детект
-    ДетектСкорости     = true,
-    ДетектGodMode      = true,
+    DetectSpeed        = true,
+    DetectGodMode      = true,
 
     -- Умный пол
-    УмныйПол           = 5,
+    SmartFloorDelay    = 5,
 
     -- UI
-    ПозицияКнопки      = UDim2.new(0, 20, 0, 200),
+    ButtonPosition     = UDim2.new(0, 20, 0, 200),
 }
 
 -- ==================== СТАТИСТИКА СЕССИИ ====================
-local СЕССИЯ = {
-    защитСработало = 0,
-    уворотов = 0,
-    читеровПомечено = 0,
-    вторжений = 0,        -- 🆕 сколько раз кто-то входил в сферу
-    начало = tick(),
+local SESSION = {
+    defenses           = 0,
+    dodges             = 0,
+    cheatersMarked     = 0,
+    intrusions         = 0,
+    startTime          = tick(),
 }
 
-local ПОМЕЧЕННЫЕ = {}
-local ЛОГ_ЧИТЕРОВ = {}
+local MARKED = {}
+local CHEATER_LOG = {}
 
 -- ==================== ЗВУКИ ====================
-local папкаЗвуков = Instance.new("Folder")
-папкаЗвуков.Name = "OrbitAC_Sfx_" .. tostring(math.random(100000, 999999))
-папкаЗвуков.Parent = SoundService
+local soundFolder = Instance.new("Folder")
+soundFolder.Name = "OrbitAC_Sfx_" .. tostring(math.random(100000, 999999))
+soundFolder.Parent = SoundService
 
-local ID_ЗВУКОВ = {
-    клик        = "rbxasset://sounds/button.wav",
-    переключатель = "rbxasset://sounds/switch.wav",
-    сигнал      = "rbxasset://sounds/electronicpingshort.wav",
-    щелчок      = "rbxasset://sounds/snap.mp3",
-    уворот      = "rbxassetid://140721035016341",
-    послеУворота = "rbxassetid://6325779988",
-    санс        = "rbxassetid://135692693675195",
-    смех        = "rbxassetid://113650760423588",
-    бот         = "rbxassetid://12221967",
-    вторжение   = "rbxassetid://12221967",  -- 🆕 звук при входе в сферу
+local SOUND_IDS = {
+    click        = "rbxasset://sounds/button.wav",
+    switch       = "rbxasset://sounds/switch.wav",
+    signal       = "rbxasset://sounds/electronicpingshort.wav",
+    snap         = "rbxasset://sounds/snap.mp3",
+    dodge        = "rbxassetid://140721035016341",
+    afterDodge   = "rbxassetid://6325779988",
+    sans         = "rbxassetid://135692693675195",
+    laugh        = "rbxassetid://113650760423588",
+    bot          = "rbxassetid://12221967",
+    intrusion    = "rbxassetid://12221967",
 }
 
-local шаблоныЗвуков = {}
-for имя, id in pairs(ID_ЗВУКОВ) do
+local soundTemplates = {}
+for name, id in pairs(SOUND_IDS) do
     local s = Instance.new("Sound")
-    s.Name = имя
+    s.Name    = name
     s.SoundId = id
-    s.Volume = 0.5
-    s.Parent = папкаЗвуков
-    шаблоныЗвуков[имя] = s
+    s.Volume  = 0.5
+    s.Parent  = soundFolder
+    soundTemplates[name] = s
 end
 
 task.spawn(function()
     pcall(function()
-        game:GetService("ContentProvider"):PreloadAsync(папкаЗвуков:GetChildren())
+        ContentProvider:PreloadAsync(soundFolder:GetChildren())
     end)
 end)
 
--- ==================== ОЧЕРЕДЬ ЗВУКОВ ====================
--- Звуки не накладываются — каждый ждёт окончания предыдущего
-local ОЧЕРЕДЬ = {
-    Играет = false,
-    Список = {},
+-- ==================== ОЧЕРЕДЬ ЗВУКОВ (без наложения) ====================
+local SOUND_QUEUE = {
+    Playing = false,
+    List    = {},
 }
 
-local function проигратьЗвук(имя, громкость, питч)
-    if not НАСТРОЙКИ.Звуки then return end
-    local шаблон = шаблоныЗвуков[имя]
-    if not шаблон then return end
+local function playSound(name, volume, pitch)
+    if not SETTINGS.Sounds then return end
+    local template = soundTemplates[name]
+    if not template then return end
 
-    table.insert(ОЧЕРЕДЬ.Список, {
-        имя = имя,
-        громкость = громкость or 1,
-        питч = питч or 1,
+    table.insert(SOUND_QUEUE.List, {
+        name   = name,
+        volume = volume or 1,
+        pitch  = pitch or 1,
     })
 
-    if not ОЧЕРЕДЬ.Играет then
+    if not SOUND_QUEUE.Playing then
         task.spawn(function()
-            ОЧЕРЕДЬ.Играет = true
-            while #ОЧЕРЕДЬ.Список > 0 do
-                local эл = table.remove(ОЧЕРЕДЬ.Список, 1)
-                local t = шаблоныЗвуков[эл.имя]
+            SOUND_QUEUE.Playing = true
+            while #SOUND_QUEUE.List > 0 do
+                local item = table.remove(SOUND_QUEUE.List, 1)
+                local t = soundTemplates[item.name]
                 if t then
                     pcall(function()
                         local s = t:Clone()
-                        s.Volume = (эл.громкость or 1) * t.Volume
-                        s.PlaybackSpeed = эл.питч or 1
-                        s.Parent = папкаЗвуков
+                        s.Volume        = (item.volume or 1) * t.Volume
+                        s.PlaybackSpeed = item.pitch or 1
+                        s.Parent        = soundFolder
                         s:Play()
-                        game:GetService("Debris"):AddItem(s, 8)
-                        local длит = math.min(s.TimeLength > 0 and s.TimeLength or 0.5, 3)
-                        task.wait(длит)
+                        Debris:AddItem(s, 8)
+                        local dur = math.min(s.TimeLength > 0 and s.TimeLength or 0.5, 3)
+                        task.wait(dur)
                     end)
                 end
             end
-            ОЧЕРЕДЬ.Играет = false
+            SOUND_QUEUE.Playing = false
         end)
     end
 end
 
-local function звякКлик() проигратьЗвук("клик", 0.5) end
-local function звякПереключатель() проигратьЗвук("переключатель", 0.5) end
-local function звякСигнал() проигратьЗвук("сигнал", 0.5) end
+local function sfxClick()       playSound("click", 0.5) end
+local function sfxSwitch()      playSound("switch", 0.5) end
+local function sfxSignal()      playSound("signal", 0.5) end
 
 -- Полная последовательность уворота: уворот → после → Санс → смех
-local function звякУворотСанса()
-    if not НАСТРОЙКИ.Звуки then return end
-    проигратьЗвук("уворот", 1, 1)
-    проигратьЗвук("послеУворота", 1, 1)
-    проигратьЗвук("санс", 1, 1)
-    проигратьЗвук("смех", 0.8, 1)
+local function sfxDodgeSans()
+    if not SETTINGS.Sounds then return end
+    playSound("dodge", 1, 1)
+    playSound("afterDodge", 1, 1)
+    playSound("sans", 1, 1)
+    playSound("laugh", 0.8, 1)
 
     pcall(function()
         local char = LocalPlayer.Character
@@ -214,10 +220,10 @@ local function звякУворотСанса()
                 pcall(function()
                     local animator = hum:FindFirstChildOfClass("Animator")
                     if animator then
-                        for _, трек in ipairs(animator:GetPlayingAnimationTracks()) do
-                            local им = трек.Animation and трек.Animation.Name or ""
-                            if им:lower():find("laugh") or им:lower():find("emote") then
-                                трек:Stop(0)
+                        for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                            local nm = track.Animation and track.Animation.Name or ""
+                            if nm:lower():find("laugh") or nm:lower():find("emote") then
+                                track:Stop(0)
                             end
                         end
                     end
@@ -227,182 +233,189 @@ local function звякУворотСанса()
     end)
 end
 
-local function звякУмныйПол()
-    if not НАСТРОЙКИ.Звуки then return end
-    звякУворотСанса()
+local function sfxSmartFloor()
+    if not SETTINGS.Sounds then return end
+    sfxDodgeSans()
 end
 
-local function звякВторжение()
-    if not НАСТРОЙКИ.Звуки then return end
-    проигратьЗвук("вторжение", 0.7, 1.5)
+local function sfxIntrusion()
+    if not SETTINGS.Sounds then return end
+    playSound("intrusion", 0.7, 1.5)
 end
 
-local function звякПометкаЧитера()
-    if not НАСТРОЙКИ.Звуки then return end
-    проигратьЗвук("сигнал", 0.4, 0.8)
+local function sfxMarkCheater()
+    if not SETTINGS.Sounds then return end
+    playSound("signal", 0.4, 0.8)
 end
 
 -- ==================== ВИЗУАЛЬНАЯ СФЕРА ====================
-local модельСферы = nil
-local частьСферы = nil
+local sphereModel = nil
+local spherePart  = nil
 
-local function создатьСферу()
-    if модельСферы then модельСферы:Destroy() end
-    модельСферы = Instance.new("Model")
-    модельСферы.Name = "OrbitAC_Сфера"
-    модельСферы.Parent = Workspace
+local function createSphere()
+    if sphereModel then sphereModel:Destroy() end
+    sphereModel = Instance.new("Model")
+    sphereModel.Name = "OrbitAC_Сфера"
+    sphereModel.Parent = Workspace
 
-    частьСферы = Instance.new("Part")
-    частьСферы.Name = "Сфера"
-    частьСферы.Shape = Enum.PartType.Ball
-    частьСферы.Size = Vector3.new(НАСТРОЙКИ.РазмерСферы, НАСТРОЙКИ.РазмерСферы, НАСТРОЙКИ.РазмерСферы)
-    частьСферы.Material = Enum.Material.ForceField
-    частьСферы.Color = Color3.fromRGB(0, 150, 255)
-    частьСферы.Transparency = 0.5
-    частьСферы.Anchored = true
-    частьСферы.CanCollide = false
-    частьСферы.CastShadow = false
-    частьСферы.CanQuery = false
-    частьСферы.CanTouch = false
-    частьСферы.Parent = модельСферы
+    spherePart = Instance.new("Part")
+    spherePart.Name         = "Сфера"
+    spherePart.Shape        = Enum.PartType.Ball
+    spherePart.Size         = Vector3.new(SETTINGS.SphereSize, SETTINGS.SphereSize, SETTINGS.SphereSize)
+    spherePart.Material     = Enum.Material.ForceField
+    spherePart.Color        = Color3.fromRGB(0, 150, 255)
+    spherePart.Transparency = 0.5
+    spherePart.Anchored     = true
+    spherePart.CanCollide   = false
+    spherePart.CastShadow   = false
+    spherePart.CanQuery     = false
+    spherePart.CanTouch     = false
+    spherePart.Parent       = sphereModel
 end
 
-local function обновитьСферу()
-    if not НАСТРОЙКИ.ВизуальнаяСфера then
-        if модельСферы then модельСферы:Destroy(); модельСферы = nil; частьСферы = nil end
+local function updateSphere()
+    if not SETTINGS.VisualSphere then
+        if sphereModel then sphereModel:Destroy(); sphereModel = nil; spherePart = nil end
         return
     end
-    if not частьСферы or not частьСферы.Parent then
-        создатьСферу()
+    if not spherePart or not spherePart.Parent then
+        createSphere()
     end
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if hrp and частьСферы then
-        частьСферы.CFrame = hrp.CFrame
+    if hrp and spherePart then
+        spherePart.CFrame = hrp.CFrame
     end
 end
 
 -- ==================== ДЕТЕКТ ВТОРЖЕНИЯ ====================
--- 🆕 Следим за игроками, которые входят в радиус сферы
-local СЛЕЖКА_ВТОРЖЕНИЙ = {
-    ПоследняяПроверка = 0,
-    Кулдаун = {},
-    БылиВнутри = {},
+local INTRUSION_TRACK = {
+    LastCheck = 0,
+    Cooldown  = {},
+    WasInside = {},
 }
 
-local function проверитьВторжение()
-    if not НАСТРОЙКИ.Включено or not НАСТРОЙКИ.ДетектВторжения then return end
+local function checkIntrusion()
+    if not SETTINGS.Enabled or not SETTINGS.IntrusionDetect then return end
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    local сейчас = tick()
-    local радиус = НАСТРОЙКИ.РазмерСферы / 2
+    local now = tick()
+    local radius = SETTINGS.SphereSize / 2
 
-    for _, игрок in ipairs(Players:GetPlayers()) do
-        if игрок == LocalPlayer then continue end
-        local чужой = игрок.Character
-        if not чужой then continue end
-        local чужойHrp = чужой:FindFirstChild("HumanoidRootPart")
-        if not чужойHrp then continue end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        local other = plr.Character
+        if not other then continue end
+        local otherHrp = other:FindFirstChild("HumanoidRootPart")
+        if not otherHrp then continue end
 
-        local дист = (чужойHrp.Position - hrp.Position).Magnitude
-        local внутри = дист <= радиус
+        local dist = (otherHrp.Position - hrp.Position).Magnitude
+        local inside = dist <= radius
 
-        -- Если игрок только что вошёл
-        if внутри and not СЛЕЖКА_ВТОРЖЕНИЙ.БылиВнутри[игрок] then
-            СЛЕЖКА_ВТОРЖЕНИЙ.БылиВнутри[игрок] = true
-            СЕССИЯ.вторжений = СЕССИЯ.вторжений + 1
+        if inside and not INTRUSION_TRACK.WasInside[plr] then
+            INTRUSION_TRACK.WasInside[plr] = true
+            SESSION.intrusions = SESSION.intrusions + 1
 
-            if not СЛЕЖКА_ВТОРЖЕНИЙ.Кулдаун[игрок] or сейчас - СЛЕЖКА_ВТОРЖЕНИЙ.Кулдаун[игрок] > 5 then
-                СЛЕЖКА_ВТОРЖЕНИЙ.Кулдаун[игрок] = сейчас
-                звякВторжение()
-                уведомить("⚠️ Вторжение: " .. игрок.Name, Color3.fromRGB(255, 150, 150), 2)
-                print("[OrbitAC] 🚨 Вторжение: " .. игрок.Name .. " (дист: " .. math.floor(дист) .. ")")
+            if not INTRUSION_TRACK.Cooldown[plr] or now - INTRUSION_TRACK.Cooldown[plr] > 5 then
+                INTRUSION_TRACK.Cooldown[plr] = now
+                sfxIntrusion()
+                notify("⚠️ Вторжение: " .. plr.Name, Color3.fromRGB(255, 150, 150), 2)
+                print("[OrbitAC] 🚨 Вторжение: " .. plr.Name .. " (дист: " .. math.floor(dist) .. ")")
 
-                -- Если Авто-Уклонение включено — отходим
-                if НАСТРОЙКИ.Уклонение and СЛЕЖКА_ВТОРЖЕНИЙ.Кулдаун[игрок] then
-                    -- отходим от игрока в противоположную сторону
-                    local отход = (hrp.Position - чужойHrp.Position).Unit
-                    local цель = hrp.Position + отход * 12
+                if SETTINGS.Dodge and INTRUSION_TRACK.Cooldown[plr] then
+                    local away = (hrp.Position - otherHrp.Position).Unit
+                    local target = hrp.Position + away * 12
                     pcall(function()
-                        char:PivotTo(CFrame.new(цель))
-                        hrp.AssemblyLinearVelocity = Vector3.zero
+                        char:PivotTo(CFrame.new(target))
+                        hrp.AssemblyLinearVelocity  = Vector3.zero
                         hrp.AssemblyAngularVelocity = Vector3.zero
                     end)
                 end
             end
-        elseif not внутри and СЛЕЖКА_ВТОРЖЕНИЙ.БылиВнутри[игрок] then
-            СЛЕЖКА_ВТОРЖЕНИЙ.БылиВнутри[игрок] = nil
+        elseif not inside and INTRUSION_TRACK.WasInside[plr] then
+            INTRUSION_TRACK.WasInside[plr] = nil
         end
     end
 end
 
 -- ==================== СОСТОЯНИЕ ====================
-local СОСТОЯНИЕ = {
-    последняяБезопаснаяПозиция = nil,
-    последнийБезопасныйCFrame = nil,
-    времяПроверки = 0,
-    времяЛечения = 0,
-    последнееЗдоровье = 100,
-    времяОтбрасывания = 0,
-    времяЗаморозки = 0,
-    льготныйСпавн = 0,
-    последняяПроверкаЗдоровья = 0,
-    последняяСкан = 0,
-    последниеПозиции = {},
-    предупреждениеGodMode = {},
-    таймерПустоты = 0,
-    последняяПроверкаПола = 0,
-    последнийHRP = nil,
-    предупреждениеДропКик = {},
-    счётчикСкачков = 0,
-    заблокированныхФлингов = 0,
-    времяЗемли = 0,
-    подключениеПерсонажа = nil,
-    последнийУмныйПол = 0,
+local STATE = {
+    lastSafePosition     = nil,
+    lastSafeCFrame       = nil,
+    lastCheckTime        = 0,
+    lastHealTime         = 0,
+    lastHealth           = 100,
+    lastKnockbackTime    = 0,
+    lastFreezeTime       = 0,
+    spawnGrace           = 0,
+    lastHealthCheck      = 0,
+    lastScan             = 0,
+    lastPositions        = {},
+    godModeWarning       = {},
+    voidTimer            = 0,
+    lastFloorCheck       = 0,
+    lastHrp              = nil,
+    dropKickWarning      = {},
+    jumpCounter          = 0,
+    blockedFlings        = 0,
+    groundTime           = 0,
+    charConnection       = nil,
+    lastSmartFloor       = 0,
 }
 
-local КОНФИГ = {
-    МАКС_СКОРОСТЬ = 60, МАКС_ПРЫЖОК = 100,
-    ПОРОГ_ФЛИНГ_СКОРОСТЬ = 200, ПОРОГ_ФЛИНГ_ВРАЩЕНИЕ = 100,
-    МГНОВЕННЫЙ_ФЛИНГ = 100000,
-    ДИСТАНЦИЯ_ТЕЛЕПОРТА = 30,
-    ТАЙМЕР_ПУСТОТЫ = 0.5,
-    БЫСТРОЕ_ПАДЕНИЕ_VY = -50,
-    ЛУЧ_ПОЛА_ДЛИНА = 500, ЛУЧ_ПОЛА_ВСТОРОНЫ = 100,
-    МИН_ВРЕМЯ_НА_ЗЕМЛЕ = 1.0,
-    КУЛДАУН_УМНОГО_ПОЛА = 3,
+local CONFIG = {
+    MAX_SPEED              = 60,
+    MAX_JUMP               = 100,
+    FLING_SPEED_THRESHOLD  = 200,
+    FLING_ROT_THRESHOLD    = 100,
+    INSTANT_FLING          = 100000,
+    TELEPORT_DISTANCE      = 30,
+    VOID_TIMER             = 0.5,
+    FAST_FALL_VY           = -50,
+    FLOOR_RAY_LENGTH       = 500,
+    FLOOR_RAY_SIDE         = 100,
+    MIN_GROUND_TIME        = 1.0,
+    SMART_FLOOR_COOLDOWN   = 3,
 }
 
-local ПЛОХИЕ_КЛАССЫ = {
-    BodyVelocity=true, BodyForce=true, BodyAngularVelocity=true,
-    BodyGyro=true, BodyPosition=true, BodyThrust=true,
-    LinearVelocity=true, AngularVelocity=true, VectorForce=true,
-    Torque=true, AlignPosition=true, AlignOrientation=true,
+local BAD_CLASSES = {
+    BodyVelocity        = true,
+    BodyForce           = true,
+    BodyAngularVelocity = true,
+    BodyGyro            = true,
+    BodyPosition        = true,
+    BodyThrust          = true,
+    LinearVelocity      = true,
+    AngularVelocity     = true,
+    VectorForce         = true,
+    Torque              = true,
+    AlignPosition       = true,
+    AlignOrientation    = true,
 }
 
 -- ==================== УТИЛИТЫ ====================
-local function лог(текст) print("[OrbitAC] " .. текст) end
+local function log(text) print("[OrbitAC] " .. text) end
 
-local function удалитьОбъект(объект)
-    if not объект or not объект.Parent then return end
-    pcall(function() объект:Destroy() end)
+local function destroyObj(obj)
+    if not obj or not obj.Parent then return end
+    pcall(function() obj:Destroy() end)
 end
 
-local function обнулитьСкорость(char)
+local function zeroVelocity(char)
     if not char then return end
     for _, p in ipairs(char:GetDescendants()) do
         if p:IsA("BasePart") then
             pcall(function()
-                p.AssemblyLinearVelocity = Vector3.zero
+                p.AssemblyLinearVelocity  = Vector3.zero
                 p.AssemblyAngularVelocity = Vector3.zero
             end)
         end
     end
 end
 
-local function наЗемле(hrp)
+local function isOnGround(hrp)
     if not hrp then return false end
     local char = hrp.Parent
     if not char then return false end
@@ -410,61 +423,61 @@ local function наЗемле(hrp)
     if not hum then return false end
     local vy = math.abs(hrp.AssemblyLinearVelocity.Y)
     if vy > 0.5 then return false end
-    local состояние = hum:GetState()
-    if состояние ~= Enum.HumanoidStateType.Running
-       and состояние ~= Enum.HumanoidStateType.RunningNoPhysics
-       and состояние ~= Enum.HumanoidStateType.Seated
-       and состояние ~= Enum.HumanoidStateType.PlatformStanding
-       and состояние ~= Enum.HumanoidStateType.Climbing then return false end
-    local пар = RaycastParams.new()
-    пар.FilterType = Enum.RaycastFilterType.Exclude
-    пар.FilterDescendantsInstances = {char}
-    local луч = Workspace:Raycast(hrp.Position, Vector3.new(0, -4, 0), пар)
-    return луч ~= nil
+    local state = hum:GetState()
+    if state ~= Enum.HumanoidStateType.Running
+       and state ~= Enum.HumanoidStateType.RunningNoPhysics
+       and state ~= Enum.HumanoidStateType.Seated
+       and state ~= Enum.HumanoidStateType.PlatformStanding
+       and state ~= Enum.HumanoidStateType.Climbing then return false end
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {char}
+    local ray = Workspace:Raycast(hrp.Position, Vector3.new(0, -4, 0), params)
+    return ray ~= nil
 end
 
-local function вВоздухе(hrp)
+local function isInAir(hrp)
     if not hrp then return false end
     local char = hrp.Parent
     if not char then return false end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum then return false end
-    local состояние = hum:GetState()
-    return состояние == Enum.HumanoidStateType.Jumping
-        or состояние == Enum.HumanoidStateType.Freefall
-        or состояние == Enum.HumanoidStateType.Flying
+    local state = hum:GetState()
+    return state == Enum.HumanoidStateType.Jumping
+        or state == Enum.HumanoidStateType.Freefall
+        or state == Enum.HumanoidStateType.Flying
 end
 
-local function получитьБезопасныйПол()
+local function getSafeFloor()
     local char = LocalPlayer.Character
     if not char then return nil end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return nil end
-    local пар = RaycastParams.new()
-    пар.FilterType = Enum.RaycastFilterType.Exclude
-    пар.FilterDescendantsInstances = {char, Workspace.CurrentCamera}
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {char, Workspace.CurrentCamera}
     local origin = hrp.Position + Vector3.new(0, 20, 0)
-    local луч = Workspace:Raycast(origin, Vector3.new(0, -КОНФИГ.ЛУЧ_ПОЛА_ДЛИНА, 0), пар)
-    if луч then return луч.Position + Vector3.new(0, 4, 0) end
-    local направления = {
-        Vector3.new(0, -КОНФИГ.ЛУЧ_ПОЛА_ВСТОРОНЫ, 30),
-        Vector3.new(0, -КОНФИГ.ЛУЧ_ПОЛА_ВСТОРОНЫ, -30),
-        Vector3.new(30, -КОНФИГ.ЛУЧ_ПОЛА_ВСТОРОНЫ, 0),
-        Vector3.new(-30, -КОНФИГ.ЛУЧ_ПОЛА_ВСТОРОНЫ, 0),
+    local ray = Workspace:Raycast(origin, Vector3.new(0, -CONFIG.FLOOR_RAY_LENGTH, 0), params)
+    if ray then return ray.Position + Vector3.new(0, 4, 0) end
+    local directions = {
+        Vector3.new(0,  -CONFIG.FLOOR_RAY_SIDE,  30),
+        Vector3.new(0,  -CONFIG.FLOOR_RAY_SIDE, -30),
+        Vector3.new(30, -CONFIG.FLOOR_RAY_SIDE,   0),
+        Vector3.new(-30,-CONFIG.FLOOR_RAY_SIDE,   0),
     }
-    for _, напр in ipairs(направления) do
-        local лучБок = Workspace:Raycast(origin, напр, пар)
-        if лучБок then return лучБок.Position + Vector3.new(0, 4, 0) end
+    for _, dir in ipairs(directions) do
+        local r = Workspace:Raycast(origin, dir, params)
+        if r then return r.Position + Vector3.new(0, 4, 0) end
     end
-    if СОСТОЯНИЕ.последнийБезопасныйCFrame then
-        local p = СОСТОЯНИЕ.последнийБезопасныйCFrame.Position
+    if STATE.lastSafeCFrame then
+        local p = STATE.lastSafeCFrame.Position
         return Vector3.new(p.X, math.max(p.Y, 10), p.Z)
     end
     return Vector3.new(0, 50, 0)
 end
 
-local function отключитьУронПадения(char)
-    if not НАСТРОЙКИ.УбратьУронПадения then return end
+local function disableFallDamage(char)
+    if not SETTINGS.NoFallDamage then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum then return end
     pcall(function()
@@ -472,81 +485,101 @@ local function отключитьУронПадения(char)
     end)
 end
 
+-- ==================== ПОМЕТКА ЧИТЕРА (глобально, вызывается из функций) ====================
+function markCheater(plr, enable)
+    if not plr or plr == LocalPlayer then return false end
+    if enable then
+        MARKED[plr] = true
+        CHEATER_LOG[plr.UserId] = { name = plr.Name, time = os.time() }
+        SESSION.cheatersMarked = SESSION.cheatersMarked + 1
+        warn("[OrbitAC] Помечен: " .. plr.Name)
+        sfxMarkCheater()
+        notify("🚩 Помечен: " .. plr.Name, Color3.fromRGB(255, 120, 120))
+    else
+        MARKED[plr] = nil
+        CHEATER_LOG[plr.UserId] = nil
+    end
+    return true
+end
+
+-- Forward declaration (для вызова из функций защиты)
+local notify
+
 -- ==================== ФУНКЦИИ ЗАЩИТЫ ====================
-local function антиДропКик(char, hrp, сейчас)
-    if not НАСТРОЙКИ.АнтиДропКик then return end
-    local текущий = hrp.CFrame
-    if СОСТОЯНИЕ.последнийHRP then
-        local дист = (текущий.Position - СОСТОЯНИЕ.последнийHRP.Position).Magnitude
-        if дист > КОНФИГ.ДИСТАНЦИЯ_ТЕЛЕПОРТА and not вВоздухе(hrp) then
-            СОСТОЯНИЕ.счётчикСкачков = СОСТОЯНИЕ.счётчикСкачков + 1
-            if СОСТОЯНИЕ.счётчикСкачков >= 2 then
-                if СОСТОЯНИЕ.последнийБезопасныйCFrame then
+local function antiDropKick(char, hrp, now)
+    if not SETTINGS.AntiDropKick then return end
+    local current = hrp.CFrame
+    if STATE.lastHrp then
+        local dist = (current.Position - STATE.lastHrp.Position).Magnitude
+        if dist > CONFIG.TELEPORT_DISTANCE and not isInAir(hrp) then
+            STATE.jumpCounter = STATE.jumpCounter + 1
+            if STATE.jumpCounter >= 2 then
+                if STATE.lastSafeCFrame then
                     pcall(function()
-                        char:PivotTo(СОСТОЯНИЕ.последнийБезопасныйCFrame)
-                        обнулитьСкорость(char)
+                        char:PivotTo(STATE.lastSafeCFrame)
+                        zeroVelocity(char)
                     end)
-                    СЕССИЯ.защитСработало = СЕССИЯ.защитСработало + 1
-                    СОСТОЯНИЕ.заблокированныхФлингов = СОСТОЯНИЕ.заблокированныхФлингов + 1
-                    звякУворотСанса()
+                    SESSION.defenses = SESSION.defenses + 1
+                    STATE.blockedFlings = STATE.blockedFlings + 1
+                    sfxDodgeSans()
                 end
-                СОСТОЯНИЕ.счётчикСкачков = 0
+                STATE.jumpCounter = 0
             end
         else
-            СОСТОЯНИЕ.счётчикСкачков = 0
+            STATE.jumpCounter = 0
         end
     end
-    СОСТОЯНИЕ.последнийHRP = текущий
-    if hrp.Anchored and not вВоздухе(hrp) then
+    STATE.lastHrp = current
+    if hrp.Anchored and not isInAir(hrp) then
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum and hum.MoveDirection.Magnitude > 0.05 then
             pcall(function() hrp.Anchored = false end)
-            СЕССИЯ.защитСработало = СЕССИЯ.защитСработало + 1
+            SESSION.defenses = SESSION.defenses + 1
         end
     end
 end
 
-local function антиФлинг(char, hrp)
-    if not НАСТРОЙКИ.АнтиФлинг then return end
-    if вВоздухе(hrp) then return end
+local function antiFling(char, hrp)
+    if not SETTINGS.AntiFling then return end
+    if isInAir(hrp) then return end
     pcall(function()
-        local скор = hrp.AssemblyLinearVelocity.Magnitude
-        local вращ = hrp.AssemblyAngularVelocity.Magnitude
-        if скор > КОНФИГ.МГНОВЕННЫЙ_ФЛИНГ or вращ > КОНФИГ.МГНОВЕННЫЙ_ФЛИНГ then
-            hrp.AssemblyLinearVelocity = Vector3.zero
+        local spd = hrp.AssemblyLinearVelocity.Magnitude
+        local rot = hrp.AssemblyAngularVelocity.Magnitude
+        if spd > CONFIG.INSTANT_FLING or rot > CONFIG.INSTANT_FLING then
+            hrp.AssemblyLinearVelocity  = Vector3.zero
             hrp.AssemblyAngularVelocity = Vector3.zero
-            if СОСТОЯНИЕ.последнийБезопасныйCFrame then pcall(function() char:PivotTo(СОСТОЯНИЕ.последнийБезопасныйCFrame) end) end
-            СЕССИЯ.защитСработало = СЕССИЯ.защитСработало + 1
-            звякУворотСанса()
+            if STATE.lastSafeCFrame then pcall(function() char:PivotTo(STATE.lastSafeCFrame) end) end
+            SESSION.defenses = SESSION.defenses + 1
+            sfxDodgeSans()
             return
         end
-        if скор > КОНФИГ.ПОРОГ_ФЛИНГ_СКОРОСТЬ and вращ > КОНФИГ.ПОРОГ_ФЛИНГ_ВРАЩЕНИЕ then
-            hrp.AssemblyLinearVelocity = Vector3.zero
+        if spd > CONFIG.FLING_SPEED_THRESHOLD and rot > CONFIG.FLING_ROT_THRESHOLD then
+            hrp.AssemblyLinearVelocity  = Vector3.zero
             hrp.AssemblyAngularVelocity = Vector3.zero
-            СЕССИЯ.защитСработало = СЕССИЯ.защитСработало + 1
-            звякУворотСанса()
+            SESSION.defenses = SESSION.defenses + 1
+            sfxDodgeSans()
         end
     end)
     -- Детект у других игроков
-    for _, игрок in ipairs(Players:GetPlayers()) do
-        if игрок == LocalPlayer then continue end
-        local чужой = игрок.Character
-        if not чужой then continue end
-        local чужойHrp = чужой:FindFirstChild("HumanoidRootPart")
-        if not чужойHrp then continue end
-        local чужоеВращ = чужойHrp.AssemblyAngularVelocity.Magnitude
-        local чужаяСкор = чужойHrp.AssemblyLinearVelocity.Magnitude
-        if чужоеВращ > КОНФИГ.ПОРОГ_ФЛИНГ_ВРАЩЕНИЕ * 2 or чужаяСкор > КОНФИГ.ПОРОГ_ФЛИНГ_СКОРОСТЬ * 2 then
-            if not СОСТОЯНИЕ.предупреждениеДропКик[игрок] then
-                СОСТОЯНИЕ.предупреждениеДропКик[игрок] = tick()
-                пометитьЧитера(игрок, true)
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        local other = plr.Character
+        if not other then continue end
+        local otherHrp = other:FindFirstChild("HumanoidRootPart")
+        if not otherHrp then continue end
+        local otherRot = otherHrp.AssemblyAngularVelocity.Magnitude
+        local otherSpd = otherHrp.AssemblyLinearVelocity.Magnitude
+        if otherRot > CONFIG.FLING_ROT_THRESHOLD * 2 or otherSpd > CONFIG.FLING_SPEED_THRESHOLD * 2 then
+            if not STATE.dropKickWarning[plr] then
+                STATE.dropKickWarning[plr] = tick()
+                markCheater(plr, true)
             end
         end
     end
 end
 
-local function антиЗаморозка(char)
-    if not НАСТРОЙКИ.АнтиЗаморозка then return end
+local function antiFreeze(char)
+    if not SETTINGS.AntiFreeze then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if hum then
         pcall(function()
@@ -554,9 +587,9 @@ local function антиЗаморозка(char)
             if hum.JumpPower < 1 then hum.JumpPower = 50 end
             local animator = hum:FindFirstChildOfClass("Animator")
             if animator then
-                for _, трек in ipairs(animator:GetPlayingAnimationTracks()) do
-                    local им = трек.Animation and трек.Animation.Name or ""
-                    if им:lower():find("laugh") then трек:Stop(0) end
+                for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                    local nm = track.Animation and track.Animation.Name or ""
+                    if nm:lower():find("laugh") then track:Stop(0) end
                 end
             end
         end)
@@ -568,155 +601,152 @@ local function антиЗаморозка(char)
     end
 end
 
-local function антиОтбрасывание(char)
-    if not НАСТРОЙКИ.АнтиОтбрасывание then return end
-    for _, ребёнок in ipairs(char:GetDescendants()) do
-        if ПЛОХИЕ_КЛАССЫ[ребёнок.ClassName] then удалитьОбъект(ребёнок) end
+local function antiKnockback(char)
+    if not SETTINGS.AntiKnockback then return end
+    for _, child in ipairs(char:GetDescendants()) do
+        if BAD_CLASSES[child.ClassName] then destroyObj(child) end
     end
 end
 
-local function антиЯкорь(char)
-    if not НАСТРОЙКИ.АнтиЯкорь then return end
+local function antiAnchor(char)
+    if not SETTINGS.AntiAnchor then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if hrp and hrp.Anchored then
         pcall(function() hrp.Anchored = false end)
-        СЕССИЯ.защитСработало = СЕССИЯ.защитСработало + 1
+        SESSION.defenses = SESSION.defenses + 1
     end
 end
 
-local function антиМгновСмерть(char)
-    if not НАСТРОЙКИ.АнтиМгновСмерть then return end
+local function antiInstantKill(char)
+    if not SETTINGS.AntiInstantKill then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
-    local сейчас = tick()
-    if наЗемле(hrp)
-        and СОСТОЯНИЕ.последнееЗдоровье > 50
+    local now = tick()
+    if isOnGround(hrp)
+        and STATE.lastHealth > 50
         and hum.Health < 10
-        and (сейчас - (СОСТОЯНИЕ.последняяПроверкаЗдоровья or 0)) < 0.15 then
-        if СОСТОЯНИЕ.последнийБезопасныйCFrame then
-            pcall(function() char:PivotTo(СОСТОЯНИЕ.последнийБезопасныйCFrame) end)
-            обнулитьСкорость(char)
-            СЕССИЯ.защитСработало = СЕССИЯ.защитСработало + 1
+        and (now - (STATE.lastHealthCheck or 0)) < 0.15 then
+        if STATE.lastSafeCFrame then
+            pcall(function() char:PivotTo(STATE.lastSafeCFrame) end)
+            zeroVelocity(char)
+            SESSION.defenses = SESSION.defenses + 1
         end
     end
-    СОСТОЯНИЕ.последнееЗдоровье = hum.Health
-    СОСТОЯНИЕ.последняяПроверкаЗдоровья = сейчас
+    STATE.lastHealth = hum.Health
+    STATE.lastHealthCheck = now
 end
 
-local function антиПустота(char, hrp, dt)
-    if not НАСТРОЙКИ.АнтиПустота then return end
+local function antiVoid(char, hrp, dt)
+    if not SETTINGS.AntiVoid then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return end
 
-    if наЗемле(hrp) then
-        СОСТОЯНИЕ.таймерПустоты = 0
+    if isOnGround(hrp) then
+        STATE.voidTimer = 0
         return
     end
 
     local vy = hrp.AssemblyLinearVelocity.Y
     local y = hrp.Position.Y
-    local падаем = false
+    local falling = false
 
     if y < -100 then
-        падаем = true
-    elseif vy < КОНФИГ.БЫСТРОЕ_ПАДЕНИЕ_VY then
-        local пар = RaycastParams.new()
-        пар.FilterType = Enum.RaycastFilterType.Exclude
-        пар.FilterDescendantsInstances = {char}
-        local луч = Workspace:Raycast(hrp.Position, Vector3.new(0, -КОНФИГ.ЛУЧ_ПОЛА_ДЛИНА, 0), пар)
-        if not луч then
-            падаем = true
-        end
+        falling = true
+    elseif vy < CONFIG.FAST_FALL_VY then
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = {char}
+        local ray = Workspace:Raycast(hrp.Position, Vector3.new(0, -CONFIG.FLOOR_RAY_LENGTH, 0), params)
+        if not ray then falling = true end
     end
 
-    if not падаем then
-        СОСТОЯНИЕ.таймерПустоты = 0
+    if not falling then
+        STATE.voidTimer = 0
         return
     end
 
-    local сейчас = tick()
-    if сейчас - (СОСТОЯНИЕ.последнийУмныйПол or 0) < КОНФИГ.КУЛДАУН_УМНОГО_ПОЛА then
-        СОСТОЯНИЕ.таймерПустоты = 0
+    local now = tick()
+    if now - (STATE.lastSmartFloor or 0) < CONFIG.SMART_FLOOR_COOLDOWN then
+        STATE.voidTimer = 0
         return
     end
 
-    СОСТОЯНИЕ.таймерПустоты = СОСТОЯНИЕ.таймерПустоты + (dt or 0.1)
-    if СОСТОЯНИЕ.таймерПустоты > КОНФИГ.ТАЙМЕР_ПУСТОТЫ then
-        local безопасно = получитьБезопасныйПол()
-        if безопасно and безопасно.Y > y + 3 then
-            СОСТОЯНИЕ.последнийУмныйПол = сейчас
+    STATE.voidTimer = STATE.voidTimer + (dt or 0.1)
+    if STATE.voidTimer > CONFIG.VOID_TIMER then
+        local safe = getSafeFloor()
+        if safe and safe.Y > y + 3 then
+            STATE.lastSmartFloor = now
             pcall(function()
-                char:PivotTo(CFrame.new(безопасно))
-                обнулитьСкорость(char)
+                char:PivotTo(CFrame.new(safe))
+                zeroVelocity(char)
             end)
             warn("[OrbitAC] Умный Пол спас с Y=" .. math.floor(y))
-            звякУмныйПол()
-            уведомить("🛡 Умный Пол спас!", Color3.fromRGB(120, 255, 180), 2)
-            СЕССИЯ.защитСработало = СЕССИЯ.защитСработало + 1
+            sfxSmartFloor()
+            notify("🛡 Умный Пол спас!", Color3.fromRGB(120, 255, 180), 2)
+            SESSION.defenses = SESSION.defenses + 1
         end
-        СОСТОЯНИЕ.таймерПустоты = 0
+        STATE.voidTimer = 0
     end
 end
 
-local function антиТелепорт(char, hrp)
-    if not НАСТРОЙКИ.АнтиТелепорт then return end
-    if not СОСТОЯНИЕ.последняяБезопаснаяПозиция then return end
-    if not наЗемле(hrp) then return end
-    if СОСТОЯНИЕ.времяЗемли < КОНФИГ.МИН_ВРЕМЯ_НА_ЗЕМЛЕ then return end
+local function antiTeleport(char, hrp)
+    if not SETTINGS.AntiTeleport then return end
+    if not STATE.lastSafePosition then return end
+    if not isOnGround(hrp) then return end
+    if STATE.groundTime < CONFIG.MIN_GROUND_TIME then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if hum and hum.MoveDirection.Magnitude > 0.05 then return end
-    local dx = hrp.Position.X - СОСТОЯНИЕ.последняяБезопаснаяПозиция.X
-    local dz = hrp.Position.Z - СОСТОЯНИЕ.последняяБезопаснаяПозиция.Z
-    local горизонт = math.sqrt(dx * dx + dz * dz)
-    if горизонт > 250 then
-        pcall(function() char:PivotTo(СОСТОЯНИЕ.последнийБезопасныйCFrame + Vector3.new(0, 2, 0)) end)
-        обнулитьСкорость(char)
-        СЕССИЯ.защитСработало = СЕССИЯ.защитСработало + 1
+    local dx = hrp.Position.X - STATE.lastSafePosition.X
+    local dz = hrp.Position.Z - STATE.lastSafePosition.Z
+    local horiz = math.sqrt(dx * dx + dz * dz)
+    if horiz > 250 then
+        pcall(function() char:PivotTo(STATE.lastSafeCFrame + Vector3.new(0, 2, 0)) end)
+        zeroVelocity(char)
+        SESSION.defenses = SESSION.defenses + 1
     end
 end
 
-local function автоЛечение(char)
-    if not НАСТРОЙКИ.АвтоЛечение then return end
+local function autoHeal(char)
+    if not SETTINGS.AutoHeal then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if hum and hum.Health < hum.MaxHealth and hum.Health > 0 then
-        pcall(function() hum.Health = math.min(hum.MaxHealth, hum.Health + НАСТРОЙКИ.СилаЛечения) end)
+        pcall(function() hum.Health = math.min(hum.MaxHealth, hum.Health + SETTINGS.HealPower) end)
     end
 end
 
-local function блокировкаПозиции(char, hrp)
-    if not НАСТРОЙКИ.БлокировкаПозиции then return end
-    if not наЗемле(hrp) then return end
-    if СОСТОЯНИЕ.времяЗемли < КОНФИГ.МИН_ВРЕМЯ_НА_ЗЕМЛЕ then return end
+local function lockPosition(char, hrp)
+    if not SETTINGS.LockPosition then return end
+    if not isOnGround(hrp) then return end
+    if STATE.groundTime < CONFIG.MIN_GROUND_TIME then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if hum and hum.MoveDirection.Magnitude > 0.05 then return end
-    if СОСТОЯНИЕ.последнийБезопасныйCFrame then pcall(function() char:PivotTo(СОСТОЯНИЕ.последнийБезопасныйCFrame) end) end
+    if STATE.lastSafeCFrame then pcall(function() char:PivotTo(STATE.lastSafeCFrame) end) end
 end
 
 -- ==================== АНТИ-СУПЕРКОЛЬЦО ====================
--- Удаляет AlignPosition и Torque у чужих объектов (Super Ring V4)
-local function антиСуперКольцо()
-    if not НАСТРОЙКИ.АнтиСуперКольцо then return end
+local function antiSuperRing()
+    if not SETTINGS.AntiSuperRing then return end
     task.spawn(function()
-        while НАСТРОЙКИ.Включено do
+        while SETTINGS.Enabled do
             task.wait(0.2)
-            for _, объект in ipairs(Workspace:GetDescendants()) do
-                if объект:IsA("BasePart") and not объект.Anchored then
-                    local родитель = объект.Parent
-                    if родитель and родитель:IsA("Model") then
-                        local hum = родитель:FindFirstChildOfClass("Humanoid")
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("BasePart") and not obj.Anchored then
+                    local parent = obj.Parent
+                    if parent and parent:IsA("Model") then
+                        local hum = parent:FindFirstChildOfClass("Humanoid")
                         if not hum then
-                            for _, реб in ipairs(объект:GetChildren()) do
-                                if реб:IsA("AlignPosition") or реб:IsA("Torque") then
-                                    pcall(function() реб:Destroy() end)
+                            for _, ch in ipairs(obj:GetChildren()) do
+                                if ch:IsA("AlignPosition") or ch:IsA("Torque") then
+                                    pcall(function() ch:Destroy() end)
                                 end
                             end
                         end
                     else
-                        for _, реб in ipairs(объект:GetChildren()) do
-                            if реб:IsA("AlignPosition") or реб:IsA("Torque") then
-                                pcall(function() реб:Destroy() end)
+                        for _, ch in ipairs(obj:GetChildren()) do
+                            if ch:IsA("AlignPosition") or ch:IsA("Torque") then
+                                pcall(function() ch:Destroy() end)
                             end
                         end
                     end
@@ -726,62 +756,157 @@ local function антиСуперКольцо()
     end)
 end
 
--- ==================== УКЛОНЕНИЕ ====================
-local подключениеУклонения = nil
-local параметрыУклонения = OverlapParams.new()
-параметрыУклонения.FilterType = Enum.RaycastFilterType.Exclude
-local последнийСканУклонения = 0
+-- ==================== АНТИ-HOMELANDER 🆕 ====================
+local function antiHomelander(char, hrp)
+    if not SETTINGS.AntiHomelander then return end
+    -- 1) Огромные BodyVelocity/LinearVelocity на себе
+    for _, v in ipairs(hrp:GetChildren()) do
+        if v:IsA("BodyVelocity") or v:IsA("LinearVelocity") then
+            local vel = v.Velocity or v.LineVelocity
+            if vel and vel.Magnitude > 200 then
+                destroyObj(v)
+                SESSION.defenses = SESSION.defenses + 1
+            end
+        end
+    end
+    -- 2) Резкие чужие части рядом со мной с огромной скоростью
+    local parts = Workspace:GetPartBoundsInRadius(hrp.Position, 6, OverlapParams.new())
+    for _, obj in ipairs(parts) do
+        if obj:IsA("BasePart") and obj ~= hrp then
+            local owner = Players:GetPlayerFromCharacter(obj.Parent)
+            if owner and owner ~= LocalPlayer then
+                if obj.AssemblyLinearVelocity.Magnitude > 250 then
+                    pcall(function()
+                        obj.AssemblyLinearVelocity  = Vector3.zero
+                        obj.AssemblyAngularVelocity = Vector3.zero
+                    end)
+                    markCheater(owner, true)
+                end
+            end
+        end
+    end
+end
 
-local УКЛОНЕНИЕ = {
-    Включено = false,
-    Радиус = 25,
-    ПорогСкорости = 25,
-    Дистанция = 15,
-    Кулдаун = 0.35,
-    Последнее = 0,
+-- ==================== АНТИ-GRAB 🆕 ====================
+local function antiGrab(char, hrp)
+    if not SETTINGS.AntiGrab then return end
+    for _, v in ipairs(hrp:GetChildren()) do
+        if v:IsA("WeldConstraint") or v:IsA("Weld")
+        or v:IsA("ManualWeld") or v:IsA("Motor6D") then
+            local p0, p1 = v.Part0, v.Part1
+            if p0 and p1 then
+                local other = (p0 == hrp) and p1 or p0
+                if other and other.Parent then
+                    local owner = Players:GetPlayerFromCharacter(other.Parent)
+                    if owner and owner ~= LocalPlayer then
+                        destroyObj(v)
+                        SESSION.defenses = SESSION.defenses + 1
+                        markCheater(owner, true)
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- ==================== АНТИ-RAGDOLL 🆕 ====================
+local function antiRagdoll(char)
+    if not SETTINGS.AntiRagdoll then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    local st = hum:GetState()
+    if st == Enum.HumanoidStateType.Physics or st == Enum.HumanoidStateType.Ragdoll then
+        pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
+        SESSION.defenses = SESSION.defenses + 1
+    end
+    for _, v in ipairs(char:GetDescendants()) do
+        if v:IsA("BallSocketConstraint") or v:IsA("NoCollisionConstraint") then
+            destroyObj(v)
+        end
+    end
+end
+
+-- ==================== АНТИ-KILLAURA 🆕 ====================
+local function antiKillaura(char, hrp)
+    if not SETTINGS.AntiKillaura then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    if hum.Health < (STATE.lastHealth or 100) - 15 then
+        local closest, closestDist = nil, math.huge
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character then
+                local oHrp = plr.Character:FindFirstChild("HumanoidRootPart")
+                if oHrp then
+                    local d = (oHrp.Position - hrp.Position).Magnitude
+                    if d < closestDist then closest, closestDist = plr, d end
+                end
+            end
+        end
+        if closest and closestDist < 15 then
+            markCheater(closest, true)
+            local away = (hrp.Position - closest.Character.HumanoidRootPart.Position).Unit
+            pcall(function() char:PivotTo(CFrame.new(hrp.Position + away * 5)) end)
+            SESSION.defenses = SESSION.defenses + 1
+        end
+    end
+    STATE.lastHealth = hum.Health
+end
+
+-- ==================== УКЛОНЕНИЕ ====================
+local dodgeConnection = nil
+local dodgeParams = OverlapParams.new()
+dodgeParams.FilterType = Enum.RaycastFilterType.Exclude
+local lastDodgeScan = 0
+
+local DODGE = {
+    Enabled        = false,
+    Radius         = 25,
+    SpeedThreshold = 25,
+    Distance       = 15,
+    Cooldown       = 0.35,
+    LastTime       = 0,
 }
 
-local function настроитьУклонение()
-    if подключениеУклонения then подключениеУклонения:Disconnect(); подключениеУклонения = nil end
-    подключениеУклонения = RunService.Heartbeat:Connect(function(dt)
-        if not НАСТРОЙКИ.Включено or not УКЛОНЕНИЕ.Включено then return end
+local function setupDodge()
+    if dodgeConnection then dodgeConnection:Disconnect(); dodgeConnection = nil end
+    dodgeConnection = RunService.Heartbeat:Connect(function(dt)
+        if not SETTINGS.Enabled or not DODGE.Enabled then return end
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
-        if вВоздухе(hrp) then return end
+        if isInAir(hrp) then return end
 
-        local сейчас = tick()
-        if сейчас - УКЛОНЕНИЕ.Последнее < УКЛОНЕНИЕ.Кулдаун then return end
-        if сейчас - последнийСканУклонения < 0.05 then return end
-        последнийСканУклонения = сейчас
-        параметрыУклонения.FilterDescendantsInstances = {char}
+        local now = tick()
+        if now - DODGE.LastTime < DODGE.Cooldown then return end
+        if now - lastDodgeScan < 0.05 then return end
+        lastDodgeScan = now
+        dodgeParams.FilterDescendantsInstances = {char}
 
-        local угрозы = {}
-        local мояПоз = hrp.Position
+        local threats = {}
+        local myPos = hrp.Position
 
-        local части = Workspace:GetPartBoundsInRadius(мояПоз, УКЛОНЕНИЕ.Радиус, параметрыУклонения)
-        for _, объект in ipairs(части) do
-            if объект:IsA("BasePart") and объект.Parent ~= char then
-                if not объект.Anchored then
-                    local скор = объект.AssemblyLinearVelocity
-                    if скор.Magnitude > УКЛОНЕНИЕ.ПорогСкорости then
-                        local коМне = (мояПоз - объект.Position)
-                        if коМне.Magnitude > 0.1 and скор.Unit:Dot(коМне.Unit) > 0.4 then
-                            table.insert(угрозы, { объект = объект, дист = коМне.Magnitude })
+        local parts = Workspace:GetPartBoundsInRadius(myPos, DODGE.Radius, dodgeParams)
+        for _, obj in ipairs(parts) do
+            if obj:IsA("BasePart") and obj.Parent ~= char then
+                if not obj.Anchored then
+                    local spd = obj.AssemblyLinearVelocity
+                    if spd.Magnitude > DODGE.SpeedThreshold then
+                        local toMe = (myPos - obj.Position)
+                        if toMe.Magnitude > 0.1 and spd.Unit:Dot(toMe.Unit) > 0.4 then
+                            table.insert(threats, { obj = obj, dist = toMe.Magnitude })
                         end
                     end
                 end
-                -- Другой игрок
-                local родитель = объект.Parent
-                if родитель and родитель:IsA("Model") and родитель ~= char then
-                    local чужойХум = родитель:FindFirstChildOfClass("Humanoid")
-                    if чужойХум and чужойХум.Health > 0 then
-                        local чужойRoot = родитель:FindFirstChild("HumanoidRootPart")
-                        if чужойRoot then
-                            local скор = чужойRoot.AssemblyLinearVelocity
-                            local вращ = чужойRoot.AssemblyAngularVelocity
-                            if скор.Magnitude > УКЛОНЕНИЕ.ПорогСкорости * 2 or вращ.Magnitude > УКЛОНЕНИЕ.ПорогСкорости then
-                                table.insert(угрозы, { объект = чужойRoot, дист = (чужойRoot.Position - мояПоз).Magnitude })
+                local parent = obj.Parent
+                if parent and parent:IsA("Model") and parent ~= char then
+                    local otherHum = parent:FindFirstChildOfClass("Humanoid")
+                    if otherHum and otherHum.Health > 0 then
+                        local otherRoot = parent:FindFirstChild("HumanoidRootPart")
+                        if otherRoot then
+                            local spd = otherRoot.AssemblyLinearVelocity
+                            local rot = otherRoot.AssemblyAngularVelocity
+                            if spd.Magnitude > DODGE.SpeedThreshold * 2 or rot.Magnitude > DODGE.SpeedThreshold then
+                                table.insert(threats, { obj = otherRoot, dist = (otherRoot.Position - myPos).Magnitude })
                             end
                         end
                     end
@@ -789,66 +914,66 @@ local function настроитьУклонение()
             end
         end
 
-        if #угрозы == 0 then return end
-        table.sort(угрозы, function(a, b) return a.дист < b.дист end)
-        local угроза = угрозы[1]
-        local напр = (угроза.объект.Position - мояПоз).Unit
-        local вправо = напр:Cross(Vector3.new(0, 1, 0)).Unit
+        if #threats == 0 then return end
+        table.sort(threats, function(a, b) return a.dist < b.dist end)
+        local threat = threats[1]
+        local dir = (threat.obj.Position - myPos).Unit
+        local right = dir:Cross(Vector3.new(0, 1, 0)).Unit
 
-        local пар = RaycastParams.new()
-        пар.FilterType = Enum.RaycastFilterType.Exclude
-        пар.FilterDescendantsInstances = {char, Workspace.CurrentCamera}
-        local лучВправо = Workspace:Raycast(мояПоз, вправо * УКЛОНЕНИЕ.Дистанция, пар)
-        local напрУклон = лучВправо and -вправо or вправо
-        local цель = мояПоз + напрУклон * УКЛОНЕНИЕ.Дистанция
-        local лучВниз = Workspace:Raycast(цель + Vector3.new(0, 5, 0), Vector3.new(0, -10, 0), пар)
-        if лучВниз then цель = лучВниз.Position + Vector3.new(0, 3, 0) end
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = {char, Workspace.CurrentCamera}
+        local rayRight = Workspace:Raycast(myPos, right * DODGE.Distance, params)
+        local dodgeDir = rayRight and -right or right
+        local target = myPos + dodgeDir * DODGE.Distance
+        local rayDown = Workspace:Raycast(target + Vector3.new(0, 5, 0), Vector3.new(0, -10, 0), params)
+        if rayDown then target = rayDown.Position + Vector3.new(0, 3, 0) end
 
         pcall(function()
-            char:PivotTo(CFrame.new(цель))
-            hrp.AssemblyLinearVelocity = Vector3.zero
+            char:PivotTo(CFrame.new(target))
+            hrp.AssemblyLinearVelocity  = Vector3.zero
             hrp.AssemblyAngularVelocity = Vector3.zero
         end)
-        УКЛОНЕНИЕ.Последнее = сейчас
-        СЕССИЯ.уворотов = СЕССИЯ.уворотов + 1
-        звякУворотСанса()
-        уведомить("🥷 Уклонение!", Color3.fromRGB(150, 220, 255), 1.5)
+        DODGE.LastTime = now
+        SESSION.dodges = SESSION.dodges + 1
+        sfxDodgeSans()
+        notify("🥷 Уклонение!", Color3.fromRGB(150, 220, 255), 1.5)
     end)
 end
 
 -- ==================== ДЕТЕКТ ТРОЛЛИНГА ====================
-local ТРОЛЛИНГ = {
-    Включено = true,
-    ПоследнийСкан = 0,
-    Кулдаун = {},
+local TROLLING = {
+    Enabled   = true,
+    LastScan  = 0,
+    Cooldown  = {},
 }
 
-local function детектТроллинга()
-    if not НАСТРОЙКИ.Включено or not ТРОЛЛИНГ.Включено then return end
-    local сейчас = tick()
-    if сейчас - ТРОЛЛИНГ.ПоследнийСкан < 0.2 then return end
-    ТРОЛЛИНГ.ПоследнийСкан = сейчас
+local function detectTrolling()
+    if not SETTINGS.Enabled or not TROLLING.Enabled then return end
+    local now = tick()
+    if now - TROLLING.LastScan < 0.2 then return end
+    TROLLING.LastScan = now
 
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    for _, игрок in ipairs(Players:GetPlayers()) do
-        if игрок == LocalPlayer then continue end
-        local чужой = игрок.Character
-        if not чужой then continue end
-        local чужойHrp = чужой:FindFirstChild("HumanoidRootPart")
-        if not чужойHrp then continue end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        local other = plr.Character
+        if not other then continue end
+        local otherHrp = other:FindFirstChild("HumanoidRootPart")
+        if not otherHrp then continue end
 
-        local дист = (чужойHrp.Position - hrp.Position).Magnitude
-        if дист < 8 then
-            local скор = чужойHrp.AssemblyLinearVelocity.Magnitude
-            local вращ = чужойHrp.AssemblyAngularVelocity.Magnitude
-            if скор > 40 or вращ > 20 then
-                if not ТРОЛЛИНГ.Кулдаун[игрок] or сейчас - ТРОЛЛИНГ.Кулдаун[игрок] > 3 then
-                    ТРОЛЛИНГ.Кулдаун[игрок] = сейчас
-                    звякУворотСанса()
-                    уведомить("⚠️ Троллинг: " .. игрок.Name, Color3.fromRGB(255, 150, 150), 2)
+        local dist = (otherHrp.Position - hrp.Position).Magnitude
+        if dist < 8 then
+            local spd = otherHrp.AssemblyLinearVelocity.Magnitude
+            local rot = otherHrp.AssemblyAngularVelocity.Magnitude
+            if spd > 40 or rot > 20 then
+                if not TROLLING.Cooldown[plr] or now - TROLLING.Cooldown[plr] > 3 then
+                    TROLLING.Cooldown[plr] = now
+                    sfxDodgeSans()
+                    notify("⚠️ Троллинг: " .. plr.Name, Color3.fromRGB(255, 150, 150), 2)
                 end
             end
         end
@@ -856,716 +981,713 @@ local function детектТроллинга()
 end
 
 -- ==================== ОТВЕТНЫЙ ФЛИНГ ====================
-local ОТВЕТНЫЙ = {
-    Включено = false, ЛимитВращения = 20 * 2 * math.pi, СилаФлинга = 500,
-    ПоследняяПроверка = 0, Интервал = 0.3, Обнаружено = {},
+local REVERSE = {
+    Enabled        = false,
+    RotLimit       = 20 * 2 * math.pi,
+    FlingPower     = 500,
+    LastCheck      = 0,
+    Interval       = 0.3,
+    Detected       = {},
 }
 
-local function ответныйФлинг(игрок)
-    if not игрок or игрок == LocalPlayer then return end
-    local char = игрок.Character
+local function reverseFling(plr)
+    if not plr or plr == LocalPlayer then return end
+    local char = plr.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
     pcall(function()
         hrp.AssemblyAngularVelocity = Vector3.new(
             math.random(-1, 1) * 1000, math.random(-1, 1) * 1000, math.random(-1, 1) * 1000)
-        hrp.AssemblyLinearVelocity = Vector3.new(0, ОТВЕТНЫЙ.СилаФлинга, 0)
+        hrp.AssemblyLinearVelocity = Vector3.new(0, REVERSE.FlingPower, 0)
     end)
-    лог("🚨 ОТВЕТНЫЙ ФЛИНГ: " .. игрок.Name)
+    log("🚨 ОТВЕТНЫЙ ФЛИНГ: " .. plr.Name)
 end
 
-local function сканФлинтеров()
-    if not ОТВЕТНЫЙ.Включено then return end
-    local сейчас = tick()
-    if сейчас - ОТВЕТНЫЙ.ПоследняяПроверка < ОТВЕТНЫЙ.Интервал then return end
-    ОТВЕТНЫЙ.ПоследняяПроверка = сейчас
-    for _, игрок in ipairs(Players:GetPlayers()) do
-        if игрок == LocalPlayer then continue end
-        local char = игрок.Character
+local function scanFlingers()
+    if not REVERSE.Enabled then return end
+    local now = tick()
+    if now - REVERSE.LastCheck < REVERSE.Interval then return end
+    REVERSE.LastCheck = now
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        local char = plr.Character
         if not char then continue end
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then continue end
-        local вращ = hrp.AssemblyAngularVelocity
-        if math.abs(вращ.X) > ОТВЕТНЫЙ.ЛимитВращения
-            or math.abs(вращ.Y) > ОТВЕТНЫЙ.ЛимитВращения
-            or math.abs(вращ.Z) > ОТВЕТНЫЙ.ЛимитВращения then
-            if not ОТВЕТНЫЙ.Обнаружено[игрок] then
-                ОТВЕТНЫЙ.Обнаружено[игрок] = сейчас
-                ответныйФлинг(игрок)
+        local rot = hrp.AssemblyAngularVelocity
+        if math.abs(rot.X) > REVERSE.RotLimit
+            or math.abs(rot.Y) > REVERSE.RotLimit
+            or math.abs(rot.Z) > REVERSE.RotLimit then
+            if not REVERSE.Detected[plr] then
+                REVERSE.Detected[plr] = now
+                reverseFling(plr)
             end
         end
     end
-    for p, t in pairs(ОТВЕТНЫЙ.Обнаружено) do
-        if сейчас - t > 5 then ОТВЕТНЫЙ.Обнаружено[p] = nil end
+    for p, t in pairs(REVERSE.Detected) do
+        if now - t > 5 then REVERSE.Detected[p] = nil end
     end
 end
-
--- ==================== ПОМЕТКА ЧИТЕРА ====================
-function пометитьЧитера(игрок, вкл)
-    if not игрок or игрок == LocalPlayer then return false end
-    if вкл then
-        ПОМЕЧЕННЫЕ[игрок] = true
-        ЛОГ_ЧИТЕРОВ[игрок.UserId] = { имя = игрок.Name, время = os.time() }
-        СЕССИЯ.читеровПомечено = СЕССИЯ.читеровПомечено + 1
-        warn("[OrbitAC] Помечен: " .. игрок.Name)
-        звякПометкаЧитера()
-        уведомить("🚩 Помечен: " .. игрок.Name, Color3.fromRGB(255, 120, 120))
-    else
-        ПОМЕЧЕННЫЕ[игрок] = nil
-        ЛОГ_ЧИТЕРОВ[игрок.UserId] = nil
-    end
-    return true
-end
-
-function переключитьПометку(игрок)
-    return пометитьЧитера(игрок, not ПОМЕЧЕННЫЕ[игрок])
-end
-
-function помеченЛи(игрок) return ПОМЕЧЕННЫЕ[игрок] == true end
 
 -- ==================== ОСНОВНОЙ ЦИКЛ ЗАЩИТЫ ====================
-local function обработкаЗащиты(dt, char, hrp)
-    local сейчас = tick()
-    local вВоздухеФлаг = вВоздухе(hrp)
+local function handleProtection(dt, char, hrp)
+    local now = tick()
+    local airFlag = isInAir(hrp)
 
-    if наЗемле(hrp) then
-        СОСТОЯНИЕ.времяЗемли = СОСТОЯНИЕ.времяЗемли + dt
+    if isOnGround(hrp) then
+        STATE.groundTime = STATE.groundTime + dt
     else
-        СОСТОЯНИЕ.времяЗемли = 0
+        STATE.groundTime = 0
     end
 
-    антиДропКик(char, hrp, сейчас)
-    антиФлинг(char, hrp)
-    антиЯкорь(char)
+    antiDropKick(char, hrp, now)
+    antiFling(char, hrp)
+    antiAnchor(char)
 
-    if сейчас - СОСТОЯНИЕ.времяОтбрасывания >= 0.1 then
-        СОСТОЯНИЕ.времяОтбрасывания = сейчас
-        антиОтбрасывание(char)
+    if now - STATE.lastKnockbackTime >= 0.1 then
+        STATE.lastKnockbackTime = now
+        antiKnockback(char)
     end
-    if сейчас - СОСТОЯНИЕ.времяЗаморозки >= 0.25 then
-        СОСТОЯНИЕ.времяЗаморозки = сейчас
-        антиЗаморозка(char)
+    if now - STATE.lastFreezeTime >= 0.25 then
+        STATE.lastFreezeTime = now
+        antiFreeze(char)
     end
-    if НАСТРОЙКИ.АвтоЛечение and сейчас - СОСТОЯНИЕ.времяЛечения >= 0.3 then
-        СОСТОЯНИЕ.времяЛечения = сейчас
-        автоЛечение(char)
-    end
-
-    антиПустота(char, hrp, dt)
-
-    local вЛьготе = (сейчас - СОСТОЯНИЕ.льготныйСпавн) < 5.0
-    if not вЛьготе and not вВоздухеФлаг then
-        антиТелепорт(char, hrp)
-        блокировкаПозиции(char, hrp)
+    if SETTINGS.AutoHeal and now - STATE.lastHealTime >= 0.3 then
+        STATE.lastHealTime = now
+        autoHeal(char)
     end
 
-    антиМгновСмерть(char)
+    antiVoid(char, hrp, dt)
+    antiHomelander(char, hrp)   -- 🆕
+    antiGrab(char, hrp)         -- 🆕
+    antiRagdoll(char)           -- 🆕
+    antiKillaura(char, hrp)     -- 🆕
 
-    pcall(детектТроллинга)
-    pcall(проверитьВторжение)
+    local inGrace = (now - STATE.spawnGrace) < 5.0
+    if not inGrace and not airFlag then
+        antiTeleport(char, hrp)
+        lockPosition(char, hrp)
+    end
 
-    if сейчас - СОСТОЯНИЕ.последняяСкан > 0.5 then
-        СОСТОЯНИЕ.последняяСкан = сейчас
-        if НАСТРОЙКИ.ДетектСкорости then
-            for _, игрок in ipairs(Players:GetPlayers()) do
-                if игрок ~= LocalPlayer then
-                    local чужой = игрок.Character
-                    if чужой then
-                        local чужойHrp = чужой:FindFirstChild("HumanoidRootPart")
-                        if чужойHrp then
-                            local последняя = СОСТОЯНИЕ.последниеПозиции[игрок]
-                            if последняя then
-                                local dt2 = сейчас - последняя.время
+    antiInstantKill(char)
+
+    pcall(detectTrolling)
+    pcall(checkIntrusion)
+
+    if now - STATE.lastScan > 0.5 then
+        STATE.lastScan = now
+        if SETTINGS.DetectSpeed then
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer then
+                    local other = plr.Character
+                    if other then
+                        local otherHrp = other:FindFirstChild("HumanoidRootPart")
+                        if otherHrp then
+                            local last = STATE.lastPositions[plr]
+                            if last then
+                                local dt2 = now - last.time
                                 if dt2 > 0.1 and dt2 < 1 then
-                                    local скор = (чужойHrp.Position - последняя.поз).Magnitude / dt2
-                                    if скор > 150 then
-                                        пометитьЧитера(игрок, true)
+                                    local spd = (otherHrp.Position - last.pos).Magnitude / dt2
+                                    if spd > 150 then
+                                        markCheater(plr, true)
                                     end
                                 end
                             end
-                            СОСТОЯНИЕ.последниеПозиции[игрок] = { поз = чужойHrp.Position, время = сейчас }
+                            STATE.lastPositions[plr] = { pos = otherHrp.Position, time = now }
                         end
                     end
                 end
             end
         end
-        pcall(сканФлинтеров)
+        pcall(scanFlingers)
     end
 
-    if сейчас - СОСТОЯНИЕ.времяПроверки > 0.2 then
-        СОСТОЯНИЕ.времяПроверки = сейчас
+    if now - STATE.lastCheckTime > 0.2 then
+        STATE.lastCheckTime = now
         local hum = char:FindFirstChildOfClass("Humanoid")
         local vy = math.abs(hrp.AssemblyLinearVelocity.Y)
         if hum and hum.Health > 0
-            and not вВоздухеФлаг
+            and not airFlag
             and vy < 1.0
-            and наЗемле(hrp) then
-            СОСТОЯНИЕ.последняяБезопаснаяПозиция = hrp.Position
+            and isOnGround(hrp) then
+            STATE.lastSafePosition = hrp.Position
             local lv = hrp.CFrame.LookVector
             local yaw = math.atan2(-lv.X, -lv.Z)
-            СОСТОЯНИЕ.последнийБезопасныйCFrame = CFrame.new(hrp.Position) * CFrame.Angles(0, yaw, 0)
+            STATE.lastSafeCFrame = CFrame.new(hrp.Position) * CFrame.Angles(0, yaw, 0)
         end
     end
 end
 
-local подключениеЗащиты = nil
+local protectionConnection = nil
 
-local function включитьЗащиту()
-    if подключениеЗащиты then подключениеЗащиты:Disconnect(); подключениеЗащиты = nil end
-    if not НАСТРОЙКИ.Включено then return end
+local function enableProtection()
+    if protectionConnection then protectionConnection:Disconnect(); protectionConnection = nil end
+    if not SETTINGS.Enabled then return end
 
-    СОСТОЯНИЕ.последняяБезопаснаяПозиция = nil
-    СОСТОЯНИЕ.последнийБезопасныйCFrame = nil
-    СОСТОЯНИЕ.времяПроверки = 0
-    СОСТОЯНИЕ.времяЛечения = 0
-    СОСТОЯНИЕ.последнееЗдоровье = 100
-    СОСТОЯНИЕ.времяОтбрасывания = 0
-    СОСТОЯНИЕ.времяЗаморозки = 0
-    СОСТОЯНИЕ.льготныйСпавн = tick()
-    СОСТОЯНИЕ.последниеПозиции = {}
-    СОСТОЯНИЕ.предупреждениеGodMode = {}
-    СОСТОЯНИЕ.таймерПустоты = 0
-    СОСТОЯНИЕ.последнийHRP = nil
-    СОСТОЯНИЕ.счётчикСкачков = 0
-    СОСТОЯНИЕ.времяЗемли = 0
-    СОСТОЯНИЕ.последнийУмныйПол = 0
+    STATE.lastSafePosition  = nil
+    STATE.lastSafeCFrame    = nil
+    STATE.lastCheckTime     = 0
+    STATE.lastHealTime      = 0
+    STATE.lastHealth        = 100
+    STATE.lastKnockbackTime = 0
+    STATE.lastFreezeTime    = 0
+    STATE.spawnGrace        = tick()
+    STATE.lastPositions     = {}
+    STATE.godModeWarning    = {}
+    STATE.voidTimer         = 0
+    STATE.lastHrp           = nil
+    STATE.jumpCounter       = 0
+    STATE.groundTime        = 0
+    STATE.lastSmartFloor    = 0
 
     if LocalPlayer.Character then
-        антиОтбрасывание(LocalPlayer.Character)
-        отключитьУронПадения(LocalPlayer.Character)
+        antiKnockback(LocalPlayer.Character)
+        disableFallDamage(LocalPlayer.Character)
     end
 
-    if СОСТОЯНИЕ.подключениеПерсонажа then СОСТОЯНИЕ.подключениеПерсонажа:Disconnect() end
-    СОСТОЯНИЕ.подключениеПерсонажа = LocalPlayer.CharacterAdded:Connect(function(новый)
-        СОСТОЯНИЕ.последнийHRP = nil
-        СОСТОЯНИЕ.льготныйСпавн = tick()
-        СОСТОЯНИЕ.последняяБезопаснаяПозиция = nil
-        СОСТОЯНИЕ.последнийБезопасныйCFrame = nil
-        СОСТОЯНИЕ.времяЗемли = 0
-        СОСТОЯНИЕ.последнийУмныйПол = 0
+    if STATE.charConnection then STATE.charConnection:Disconnect() end
+    STATE.charConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
+        STATE.lastHrp           = nil
+        STATE.spawnGrace        = tick()
+        STATE.lastSafePosition  = nil
+        STATE.lastSafeCFrame    = nil
+        STATE.groundTime        = 0
+        STATE.lastSmartFloor    = 0
         task.wait(0.5)
-        отключитьУронПадения(новый)
+        disableFallDamage(newChar)
     end)
 
-    настроитьУклонение()
-    антиСуперКольцо()
+    setupDodge()
+    antiSuperRing()
 
-    подключениеЗащиты = RunService.Heartbeat:Connect(function(dt)
-        if not НАСТРОЙКИ.Включено then return end
+    protectionConnection = RunService.Heartbeat:Connect(function(dt)
+        if not SETTINGS.Enabled then return end
         local char = LocalPlayer.Character
         if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
-        pcall(обработкаЗащиты, dt, char, hrp)
+        pcall(handleProtection, dt, char, hrp)
     end)
 
-    уведомить("🛡 Анти-Чит v11.2 ВКЛ", Color3.fromRGB(120, 255, 180), 3)
-    лог("Анти-Чит v11.2 активен.")
+    notify("🛡 Анти-Чит v12.0 ВКЛ", Color3.fromRGB(120, 255, 180), 3)
+    log("Анти-Чит v12.0 активен.")
 end
 
-local function выключитьЗащиту()
-    if СОСТОЯНИЕ.подключениеПерсонажа then СОСТОЯНИЕ.подключениеПерсонажа:Disconnect(); СОСТОЯНИЕ.подключениеПерсонажа = nil end
-    if подключениеЗащиты then подключениеЗащиты:Disconnect(); подключениеЗащиты = nil end
-    if подключениеУклонения then подключениеУклонения:Disconnect(); подключениеУклонения = nil end
-    СОСТОЯНИЕ.последняяБезопаснаяПозиция = nil
-    СОСТОЯНИЕ.последнийБезопасныйCFrame = nil
+local function disableProtection()
+    if STATE.charConnection then STATE.charConnection:Disconnect(); STATE.charConnection = nil end
+    if protectionConnection then protectionConnection:Disconnect(); protectionConnection = nil end
+    if dodgeConnection then dodgeConnection:Disconnect(); dodgeConnection = nil end
+    STATE.lastSafePosition = nil
+    STATE.lastSafeCFrame = nil
 end
 
-Workspace.DescendantAdded:Connect(function(объект)
-    if not НАСТРОЙКИ.Включено or not НАСТРОЙКИ.АнтиВзрыв then return end
-    if объект:IsA("Explosion") then
-        task.defer(function() pcall(function() объект:Destroy() end) end)
+Workspace.DescendantAdded:Connect(function(obj)
+    if not SETTINGS.Enabled or not SETTINGS.AntiExplosion then return end
+    if obj:IsA("Explosion") then
+        task.defer(function() pcall(function() obj:Destroy() end) end)
     end
 end)
 
 -- ==================== UI ====================
-local экран = Instance.new("ScreenGui")
-экран.Name = "_OrbitAC_" .. tostring(math.random(100000, 999999))
-экран.ResetOnSpawn = false
-экран.IgnoreGuiInset = true
-экран.DisplayOrder = 9999
-экран.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-protectGui(экран)
-local ок = pcall(function() экран.Parent = getSafeParent() end)
-if not ок or not экран.Parent then экран.Parent = PlayerGui end
+local screen = Instance.new("ScreenGui")
+screen.Name = "_OrbitAC_" .. tostring(math.random(100000, 999999))
+screen.ResetOnSpawn = false
+screen.IgnoreGuiInset = true
+screen.DisplayOrder = 9999
+screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+protectGui(screen)
+local okParent = pcall(function() screen.Parent = getSafeParent() end)
+if not okParent or not screen.Parent then screen.Parent = PlayerGui end
 
-local главнаяКнопка = Instance.new("TextButton")
-главнаяКнопка.Size = UDim2.new(0, 56, 0, 56)
-главнаяКнопка.Position = НАСТРОЙКИ.ПозицияКнопки
-главнаяКнопка.BackgroundColor3 = Color3.fromRGB(40, 20, 20)
-главнаяКнопка.BackgroundTransparency = 0.1
-главнаяКнопка.TextColor3 = Color3.fromRGB(255, 180, 180)
-главнаяКнопка.Font = Enum.Font.GothamBold
-главнаяКнопка.TextSize = 24
-главнаяКнопка.Text = "🛡"
-главнаяКнопка.AutoButtonColor = false
-главнаяКнопка.Parent = экран
-Instance.new("UICorner", главнаяКнопка).CornerRadius = UDim.new(0, 14)
-local обводкаКнопки = Instance.new("UIStroke", главнаяКнопка)
-обводкаКнопки.Color = Color3.fromRGB(255, 100, 100)
-обводкаКнопки.Thickness = 1.5
+local mainButton = Instance.new("TextButton")
+mainButton.Size = UDim2.new(0, 56, 0, 56)
+mainButton.Position = SETTINGS.ButtonPosition
+mainButton.BackgroundColor3 = Color3.fromRGB(40, 20, 20)
+mainButton.BackgroundTransparency = 0.1
+mainButton.TextColor3 = Color3.fromRGB(255, 180, 180)
+mainButton.Font = Enum.Font.GothamBold
+mainButton.TextSize = 24
+mainButton.Text = "🛡"
+mainButton.AutoButtonColor = false
+mainButton.Parent = screen
+Instance.new("UICorner", mainButton).CornerRadius = UDim.new(0, 14)
+local btnStroke = Instance.new("UIStroke", mainButton)
+btnStroke.Color = Color3.fromRGB(255, 100, 100)
+btnStroke.Thickness = 1.5
 
-local панель = Instance.new("ScrollingFrame")
-панель.Size = UDim2.new(0, 300, 0, 600)
-панель.Position = UDim2.new(0, 90, 0, 60)
-панель.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
-панель.BackgroundTransparency = 0.15
-панель.BorderSizePixel = 0
-панель.Visible = false
-панель.CanvasSize = UDim2.new(0, 0, 0, 1700)
-панель.ScrollBarThickness = 4
-панель.ScrollBarImageColor3 = Color3.fromRGB(255, 100, 100)
-панель.Parent = экран
-Instance.new("UICorner", панель).CornerRadius = UDim.new(0, 12)
-local обводкаПанели = Instance.new("UIStroke", панель)
-обводкаПанели.Color = Color3.fromRGB(255, 100, 100)
-обводкаПанели.Thickness = 1
+local panel = Instance.new("ScrollingFrame")
+panel.Size = UDim2.new(0, 300, 0, 600)
+panel.Position = UDim2.new(0, 90, 0, 60)
+panel.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+panel.BackgroundTransparency = 0.15
+panel.BorderSizePixel = 0
+panel.Visible = false
+panel.CanvasSize = UDim2.new(0, 0, 0, 1700)
+panel.ScrollBarThickness = 4
+panel.ScrollBarImageColor3 = Color3.fromRGB(255, 100, 100)
+panel.Parent = screen
+Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 12)
+local panelStroke = Instance.new("UIStroke", panel)
+panelStroke.Color = Color3.fromRGB(255, 100, 100)
+panelStroke.Thickness = 1
 
-local масштабПанели = Instance.new("UIScale")
-масштабПанели.Parent = панель
+local panelScale = Instance.new("UIScale")
+panelScale.Parent = panel
 
-local заголовок = Instance.new("TextLabel")
-заголовок.Size = UDim2.new(1, 0, 0, 30)
-заголовок.Position = UDim2.new(0, 0, 0, 6)
-заголовок.BackgroundTransparency = 1
-заголовок.Text = "🛡  ОРБИТА АНТИ-ЧИТ v11.2"
-заголовок.TextColor3 = Color3.fromRGB(255, 200, 200)
-заголовок.Font = Enum.Font.GothamBold
-заголовок.TextSize = 15
-заголовок.Parent = панель
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.Position = UDim2.new(0, 0, 0, 6)
+title.BackgroundTransparency = 1
+title.Text = "🛡  ОРБИТА АНТИ-ЧИТ v12.0"
+title.TextColor3 = Color3.fromRGB(255, 200, 200)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 15
+title.Parent = panel
 
-local function создатьСекцию(текст, y, цвет)
-    local рамка = Instance.new("Frame")
-    рамка.Size = UDim2.new(1, -20, 0, 28)
-    рамка.Position = UDim2.new(0, 10, 0, y)
-    рамка.BackgroundColor3 = цвет or Color3.fromRGB(80, 40, 40)
-    рамка.BackgroundTransparency = 0.35
-    рамка.BorderSizePixel = 0
-    рамка.Parent = панель
-    Instance.new("UICorner", рамка).CornerRadius = UDim.new(0, 8)
-    local полоска = Instance.new("Frame")
-    полоска.Size = UDim2.new(0, 4, 1, -8)
-    полоска.Position = UDim2.new(0, 4, 0, 4)
-    полоска.BackgroundColor3 = цвет or Color3.fromRGB(255, 100, 100)
-    полоска.BorderSizePixel = 0
-    полоска.Parent = рамка
-    Instance.new("UICorner", полоска).CornerRadius = UDim.new(0, 2)
-    local т = Instance.new("TextLabel")
-    т.Size = UDim2.new(1, -14, 1, 0)
-    т.Position = UDim2.new(0, 12, 0, 0)
-    т.BackgroundTransparency = 1
-    т.Text = текст
-    т.TextColor3 = Color3.fromRGB(240, 240, 255)
-    т.Font = Enum.Font.GothamBold
-    т.TextSize = 13
-    т.TextXAlignment = Enum.TextXAlignment.Left
-    т.Parent = рамка
+local function createSection(text, y, color)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -20, 0, 28)
+    frame.Position = UDim2.new(0, 10, 0, y)
+    frame.BackgroundColor3 = color or Color3.fromRGB(80, 40, 40)
+    frame.BackgroundTransparency = 0.35
+    frame.BorderSizePixel = 0
+    frame.Parent = panel
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+    local bar = Instance.new("Frame")
+    bar.Size = UDim2.new(0, 4, 1, -8)
+    bar.Position = UDim2.new(0, 4, 0, 4)
+    bar.BackgroundColor3 = color or Color3.fromRGB(255, 100, 100)
+    bar.BorderSizePixel = 0
+    bar.Parent = frame
+    Instance.new("UICorner", bar).CornerRadius = UDim.new(0, 2)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -14, 1, 0)
+    lbl.Position = UDim2.new(0, 12, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = text
+    lbl.TextColor3 = Color3.fromRGB(240, 240, 255)
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 13
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = frame
 end
 
-local function создатьКнопку(текст, y, h, фон, цветТекста)
+local function createButton(text, y, h, bg, txtColor)
     local b = Instance.new("TextButton")
     b.Size = UDim2.new(1, -20, 0, h or 32)
     b.Position = UDim2.new(0, 10, 0, y)
-    b.BackgroundColor3 = фон or Color3.fromRGB(45, 45, 62)
-    b.TextColor3 = цветТекста or Color3.fromRGB(235, 235, 255)
+    b.BackgroundColor3 = bg or Color3.fromRGB(45, 45, 62)
+    b.TextColor3 = txtColor or Color3.fromRGB(235, 235, 255)
     b.Font = Enum.Font.GothamBold
     b.TextSize = 12
-    b.Text = текст
+    b.Text = text
     b.AutoButtonColor = true
-    b.Parent = панель
+    b.Parent = panel
     Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
-    local обводка = Instance.new("UIStroke", b)
-    обводка.Color = фон or Color3.fromRGB(80, 80, 120)
-    обводка.Thickness = 1
-    обводка.Transparency = 0.65
-    b.MouseButton1Down:Connect(звякКлик)
-    b.InputBegan:Connect(function(ввод)
-        if ввод.UserInputType == Enum.UserInputType.Touch then звякКлик() end
+    local stroke = Instance.new("UIStroke", b)
+    stroke.Color = bg or Color3.fromRGB(80, 80, 120)
+    stroke.Thickness = 1
+    stroke.Transparency = 0.65
+    b.MouseButton1Down:Connect(sfxClick)
+    b.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then sfxClick() end
     end)
     return b
 end
 
-создатьСекцию("⚡  ОСНОВНОЕ", 42, Color3.fromRGB(80, 40, 40))
-local кнопкаВкл = создатьКнопку("🔴 ВЫКЛЮЧЕНО", 74, 36, Color3.fromRGB(50, 35, 40), Color3.fromRGB(255, 80, 80))
+createSection("⚡  ОСНОВНОЕ", 42, Color3.fromRGB(80, 40, 40))
+local btnToggle = createButton("🔴 ВЫКЛЮЧЕНО", 74, 36, Color3.fromRGB(50, 35, 40), Color3.fromRGB(255, 80, 80))
 
-создатьСекцию("📊  СТАТИСТИКА", 118, Color3.fromRGB(60, 60, 90))
-local статистика = Instance.new("TextLabel")
-статистика.Size = UDim2.new(1, -20, 0, 110)
-статистика.Position = UDim2.new(0, 10, 0, 150)
-статистика.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
-статистика.BackgroundTransparency = 0.2
-статистика.BorderSizePixel = 0
-статистика.TextColor3 = Color3.fromRGB(200, 220, 255)
-статистика.Font = Enum.Font.GothamBold
-статистика.TextSize = 11
-статистика.TextXAlignment = Enum.TextXAlignment.Left
-статистика.TextYAlignment = Enum.TextYAlignment.Top
-статистика.Text = "Загрузка..."
-статистика.Parent = панель
-Instance.new("UICorner", статистика).CornerRadius = UDim.new(0, 6)
+createSection("📊  СТАТИСТИКА", 118, Color3.fromRGB(60, 60, 90))
+local statsLabel = Instance.new("TextLabel")
+statsLabel.Size = UDim2.new(1, -20, 0, 110)
+statsLabel.Position = UDim2.new(0, 10, 0, 150)
+statsLabel.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+statsLabel.BackgroundTransparency = 0.2
+statsLabel.BorderSizePixel = 0
+statsLabel.TextColor3 = Color3.fromRGB(200, 220, 255)
+statsLabel.Font = Enum.Font.GothamBold
+statsLabel.TextSize = 11
+statsLabel.TextXAlignment = Enum.TextXAlignment.Left
+statsLabel.TextYAlignment = Enum.TextYAlignment.Top
+statsLabel.Text = "Загрузка..."
+statsLabel.Parent = panel
+Instance.new("UICorner", statsLabel).CornerRadius = UDim.new(0, 6)
 
-создатьСекцию("🛡️  ЗАЩИТА", 268, Color3.fromRGB(60, 100, 60))
-local кнФлинг   = создатьКнопку("🛡️ Анти-Флинг: ВКЛ", 300, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
-local кнПустота  = создатьКнопку("🛡️ Анти-Пустота: ВКЛ", 334, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
-local кнТелепорт = создатьКнопку("🛡️ Анти-Телепорт: ВКЛ", 368, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
-local кнОтбрас   = создатьКнопку("🛡️ Анти-Отбрасывание: ВКЛ", 402, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
-local кнЗамороз  = создатьКнопку("🛡️ Анти-Заморозка: ВКЛ", 436, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
-local кнДропКик  = создатьКнопку("🛡️ Анти-ДропКик: ВКЛ", 470, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
-local кнМгнСмерть= создатьКнопку("🛡️ Анти-МгновСмерть: ВКЛ", 504, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
-local кнВзрыв    = создатьКнопку("🛡️ Анти-Взрыв: ВКЛ", 538, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
-local кнСуперК   = создатьКнопку("🛡️ Анти-СуперКольцо: ВКЛ", 572, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
-local кнУронП    = создатьКнопку("🛡️ Убрать урон падения: ВКЛ", 606, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
+createSection("🛡️  ЗАЩИТА", 268, Color3.fromRGB(60, 100, 60))
+local btnFling      = createButton("🛡️ Анти-Флинг: ВКЛ",          300, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
+local btnVoid       = createButton("🛡️ Анти-Пустота: ВКЛ",        334, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
+local btnTeleport   = createButton("🛡️ Анти-Телепорт: ВКЛ",       368, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
+local btnKnockback  = createButton("🛡️ Анти-Отбрасывание: ВКЛ",   402, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
+local btnFreeze     = createButton("🛡️ Анти-Заморозка: ВКЛ",      436, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
+local btnDropKick   = createButton("🛡️ Анти-ДропКик: ВКЛ",        470, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
+local btnInstant    = createButton("🛡️ Анти-МгновСмерть: ВКЛ",    504, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
+local btnExplosion  = createButton("🛡️ Анти-Взрыв: ВКЛ",          538, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
+local btnSuperRing  = createButton("🛡️ Анти-СуперКольцо: ВКЛ",    572, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
+local btnHomelander = createButton("🛡️ Анти-Homelander: ВКЛ",     606, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
+local btnGrab       = createButton("🛡️ Анти-Grab: ВКЛ",           640, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
+local btnRagdoll    = createButton("🛡️ Анти-Ragdoll: ВКЛ",        674, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
+local btnKillaura   = createButton("🛡️ Анти-Killaura: ВКЛ",       708, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
+local btnNoFall     = createButton("🛡️ Убрать урон падения: ВКЛ", 742, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
 
-создатьСекцию("💚  УТИЛИТЫ", 648, Color3.fromRGB(80, 100, 60))
-local кнЛечение = создатьКнопку("💚 Авто-Лечение: ВЫКЛ", 680, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
-local кнБлокПоз = создатьКнопку("📍 Блокировка позиции: ВЫКЛ", 714, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
+createSection("💚  УТИЛИТЫ", 784, Color3.fromRGB(80, 100, 60))
+local btnHeal     = createButton("💚 Авто-Лечение: ВЫКЛ",           816, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
+local btnLock     = createButton("📍 Блокировка позиции: ВЫКЛ",     850, 30, Color3.fromRGB(35,50,35), Color3.fromRGB(160,255,160))
 
-создатьСекцию("👁️  ВИЗУАЛ", 756, Color3.fromRGB(60, 80, 120))
-local кнСфера    = создатьКнопку("🔵 Сфера: ВЫКЛ", 788, 32, Color3.fromRGB(40,50,70), Color3.fromRGB(180,220,255))
-local кнРазмер   = создатьКнопку("📏 Размер сферы: 8", 824, 30, Color3.fromRGB(40,50,70), Color3.fromRGB(180,220,255))
-local кнВторж    = создатьКнопку("🚨 Детект вторжения: ВКЛ", 858, 30, Color3.fromRGB(50,40,60), Color3.fromRGB(255,180,200))
+createSection("👁️  ВИЗУАЛ", 892, Color3.fromRGB(60, 80, 120))
+local btnSphere   = createButton("🔵 Сфера: ВЫКЛ",                  924, 32, Color3.fromRGB(40,50,70), Color3.fromRGB(180,220,255))
+local btnSize     = createButton("📏 Размер сферы: 8",              960, 30, Color3.fromRGB(40,50,70), Color3.fromRGB(180,220,255))
+local btnIntrusion= createButton("🚨 Детект вторжения: ВКЛ",        994, 30, Color3.fromRGB(50,40,60), Color3.fromRGB(255,180,200))
 
-создатьСекцию("🥷  ДОП. ЗАЩИТА", 900, Color3.fromRGB(80, 60, 130))
-local кнУклон    = создатьКнопку("🥷 Уклонение: ВЫКЛ", 932, 32, Color3.fromRGB(50,50,50), Color3.fromRGB(200,200,200))
-local кнТролл    = создатьКнопку("👁️ Детект троллинга: ВКЛ", 968, 30, Color3.fromRGB(50,60,80), Color3.fromRGB(200,220,255))
-local кнОтветн   = создатьКнопку("🚨 Ответный флинг: ВЫКЛ", 1000, 30, Color3.fromRGB(60,30,30), Color3.fromRGB(255,150,150))
+createSection("🥷  ДОП. ЗАЩИТА", 1036, Color3.fromRGB(80, 60, 130))
+local btnDodge    = createButton("🥷 Уклонение: ВЫКЛ",              1068, 32, Color3.fromRGB(50,50,50), Color3.fromRGB(200,200,200))
+local btnTroll    = createButton("👁️ Детект троллинга: ВКЛ",       1104, 30, Color3.fromRGB(50,60,80), Color3.fromRGB(200,220,255))
+local btnReverse  = createButton("🚨 Ответный флинг: ВЫКЛ",         1136, 30, Color3.fromRGB(60,30,30), Color3.fromRGB(255,150,150))
 
-создатьСекцию("👁️  ДЕТЕКТ ЧИТЕРОВ", 1042, Color3.fromRGB(100, 60, 60))
-local кнСкорость = создатьКнопку("⚡ Детект скорости: ВКЛ", 1074, 30, Color3.fromRGB(50,40,40), Color3.fromRGB(255,180,180))
-local кнGodMode  = создатьКнопку("👁️ Детект GodMode: ВКЛ", 1108, 30, Color3.fromRGB(50,40,40), Color3.fromRGB(255,180,180))
-local кнСписок   = создатьКнопку("📋 Список читеров: 0", 1142, 28, Color3.fromRGB(60,35,45), Color3.fromRGB(255,180,220))
+createSection("👁️  ДЕТЕКТ ЧИТЕРОВ", 1178, Color3.fromRGB(100, 60, 60))
+local btnSpeed    = createButton("⚡ Детект скорости: ВКЛ",         1210, 30, Color3.fromRGB(50,40,40), Color3.fromRGB(255,180,180))
+local btnGodMode  = createButton("👁️ Детект GodMode: ВКЛ",          1244, 30, Color3.fromRGB(50,40,40), Color3.fromRGB(255,180,180))
+local btnList     = createButton("📋 Список читеров: 0",            1278, 28, Color3.fromRGB(60,35,45), Color3.fromRGB(255,180,220))
 
-создатьСекцию("🔊  ЗВУКИ", 1182, Color3.fromRGB(70, 80, 110))
-local кнЗвук     = создатьКнопку("🔊 Звуки: ВКЛ", 1214, 30, Color3.fromRGB(35,60,45), Color3.fromRGB(180,255,180))
-local кнТестЗвук = создатьКнопку("🎵 Проверить звуки", 1248, 30, Color3.fromRGB(50,60,90), Color3.fromRGB(200,220,255))
+createSection("🔊  ЗВУКИ", 1318, Color3.fromRGB(70, 80, 110))
+local btnSounds   = createButton("🔊 Звуки: ВКЛ",                   1350, 30, Color3.fromRGB(35,60,45), Color3.fromRGB(180,255,180))
+local btnTestSnd  = createButton("🎵 Проверить звуки",              1384, 30, Color3.fromRGB(50,60,90), Color3.fromRGB(200,220,255))
 
-создатьСекцию("💾  СИСТЕМА", 1290, Color3.fromRGB(60, 60, 80))
-local кнСохранить = создатьКнопку("💾 Сохранить настройки", 1322, 30, Color3.fromRGB(35,60,45), Color3.fromRGB(160,255,180))
-local кнЗагрузить  = создатьКнопку("📂 Загрузить настройки", 1356, 30, Color3.fromRGB(35,50,60), Color3.fromRGB(180,220,255))
-local кнСброс     = создатьКнопку("🔄 Сбросить всё", 1390, 30, Color3.fromRGB(50,30,30), Color3.fromRGB(255,180,180))
-local кнВыгрузить = создатьКнопку("❌ ВЫГРУЗИТЬ", 1424, 32, Color3.fromRGB(80,30,30), Color3.fromRGB(255,140,140))
+createSection("💾  СИСТЕМА", 1426, Color3.fromRGB(60, 60, 80))
+local btnSave     = createButton("💾 Сохранить настройки",          1458, 30, Color3.fromRGB(35,60,45), Color3.fromRGB(160,255,180))
+local btnLoad     = createButton("📂 Загрузить настройки",          1492, 30, Color3.fromRGB(35,50,60), Color3.fromRGB(180,220,255))
+local btnReset    = createButton("🔄 Сбросить всё",                 1526, 30, Color3.fromRGB(50,30,30), Color3.fromRGB(255,180,180))
+local btnUnload   = createButton("❌ ВЫГРУЗИТЬ",                    1560, 32, Color3.fromRGB(80,30,30), Color3.fromRGB(255,140,140))
 
-панель.CanvasSize = UDim2.new(0, 0, 0, 1470)
+panel.CanvasSize = UDim2.new(0, 0, 0, 1610)
 
 -- ==================== УВЕДОМЛЕНИЯ ====================
-local контейнерУвед = Instance.new("Frame")
-контейнерУвед.Size = UDim2.new(0, 300, 0.4, 0)
-контейнерУвед.Position = UDim2.new(1, -320, 0.15, 0)
-контейнерУвед.BackgroundTransparency = 1
-контейнерУвед.Parent = экран
+local notifyContainer = Instance.new("Frame")
+notifyContainer.Size = UDim2.new(0, 300, 0.4, 0)
+notifyContainer.Position = UDim2.new(1, -320, 0.15, 0)
+notifyContainer.BackgroundTransparency = 1
+notifyContainer.Parent = screen
 
-local раскладкаУвед = Instance.new("UIListLayout")
-раскладкаУвед.SortOrder = Enum.SortOrder.LayoutOrder
-раскладкаУвед.Padding = UDim.new(0, 6)
-раскладкаУвед.VerticalAlignment = Enum.VerticalAlignment.Top
-раскладкаУвед.Parent = контейнерУвед
+local notifyLayout = Instance.new("UIListLayout")
+notifyLayout.SortOrder = Enum.SortOrder.LayoutOrder
+notifyLayout.Padding = UDim.new(0, 6)
+notifyLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+notifyLayout.Parent = notifyContainer
 
-local счётчикУвед = 0
-function уведомить(текст, цвет, длительность)
-    длительность = длительность or 2
-    цвет = цвет or Color3.fromRGB(140, 255, 200)
-    счётчикУвед = счётчикУвед + 1
+local notifyCounter = 0
 
-    local слот = Instance.new("Frame")
-    слот.Size = UDim2.new(1, 0, 0, 40)
-    слот.BackgroundTransparency = 1
-    слот.LayoutOrder = счётчикУвед
-    слот.Parent = контейнерУвед
+notify = function(msg, color, duration)
+    duration = duration or 2
+    color = color or Color3.fromRGB(140, 255, 200)
+    notifyCounter = notifyCounter + 1
 
-    local слоты = {}
-    for _, р in ipairs(контейнерУвед:GetChildren()) do
-        if р:IsA("Frame") then table.insert(слоты, р) end
+    local slot = Instance.new("Frame")
+    slot.Size = UDim2.new(1, 0, 0, 40)
+    slot.BackgroundTransparency = 1
+    slot.LayoutOrder = notifyCounter
+    slot.Parent = notifyContainer
+
+    local slots = {}
+    for _, child in ipairs(notifyContainer:GetChildren()) do
+        if child:IsA("Frame") then table.insert(slots, child) end
     end
-    table.sort(слоты, function(a, b) return a.LayoutOrder < b.LayoutOrder end)
-    while #слоты > 6 do table.remove(слоты, 1):Destroy() end
+    table.sort(slots, function(a, b) return a.LayoutOrder < b.LayoutOrder end)
+    while #slots > 6 do table.remove(slots, 1):Destroy() end
 
-    local рамка = Instance.new("Frame")
-    рамка.Size = UDim2.new(1, 0, 1, 0)
-    рамка.Position = UDim2.new(1.15, 0, 0, 0)
-    рамка.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-    рамка.BackgroundTransparency = 0.15
-    рамка.BorderSizePixel = 0
-    рамка.Parent = слот
-    Instance.new("UICorner", рамка).CornerRadius = UDim.new(0, 8)
-    local обводка = Instance.new("UIStroke", рамка)
-    обводка.Color = цвет
-    обводка.Thickness = 1.5
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 1, 0)
+    frame.Position = UDim2.new(1.15, 0, 0, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    frame.BackgroundTransparency = 0.15
+    frame.BorderSizePixel = 0
+    frame.Parent = slot
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+    local stroke = Instance.new("UIStroke", frame)
+    stroke.Color = color
+    stroke.Thickness = 1.5
 
-    local текст = Instance.new("TextLabel")
-    текст.Size = UDim2.new(1, -16, 1, 0)
-    текст.Position = UDim2.new(0, 8, 0, 0)
-    текст.BackgroundTransparency = 1
-    текст.Text = текст
-    текст.TextColor3 = цвет
-    текст.Font = Enum.Font.GothamBold
-    текст.TextSize = 13
-    текст.TextWrapped = true
-    текст.TextXAlignment = Enum.TextXAlignment.Left
-    текст.Parent = рамка
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, -16, 1, 0)
+    textLabel.Position = UDim2.new(0, 8, 0, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = msg                 -- ← исправлено: было `текст.Text = текст`
+    textLabel.TextColor3 = color
+    textLabel.Font = Enum.Font.GothamBold
+    textLabel.TextSize = 13
+    textLabel.TextWrapped = true
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.Parent = frame
 
-    TweenService:Create(рамка, TweenInfo.new(0.3, Enum.EasingStyle.Back), {
+    TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Back), {
         Position = UDim2.new(0, 0, 0, 0),
     }):Play()
 
-    task.delay(длительность, function()
-        if not слот or not слот.Parent then return end
-        local выход = TweenService:Create(рамка, TweenInfo.new(0.25), { Position = UDim2.new(1.15, 0, 0, 0) })
-        выход:Play()
-        выход.Completed:Connect(function() pcall(function() слот:Destroy() end) end)
+    task.delay(duration, function()
+        if not slot or not slot.Parent then return end
+        local out = TweenService:Create(frame, TweenInfo.new(0.25), { Position = UDim2.new(1.15, 0, 0, 0) })
+        out:Play()
+        out.Completed:Connect(function() pcall(function() slot:Destroy() end) end)
     end)
 end
-GENV._ORBIT_AC_NOTIFY = уведомить
+GENV._ORBIT_AC_NOTIFY = notify
 
 -- ==================== ОБРАБОТЧИКИ UI ====================
-local тащим, двинули = false, false
-local начПозиция, стартПозиция
+local dragging, moved = false, false
+local startInputPos, startButtonPos
 
-главнаяКнопка.InputBegan:Connect(function(ввод)
-    if ввод.UserInputType == Enum.UserInputType.Touch
-       or ввод.UserInputType == Enum.UserInputType.MouseButton1 then
-        тащим = true
-        двинули = false
-        начПозиция = ввод.Position
-        стартПозиция = главнаяКнопка.Position
+mainButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch
+       or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        moved = false
+        startInputPos = input.Position
+        startButtonPos = mainButton.Position
     end
 end)
 
-game:GetService("UserInputService").InputChanged:Connect(function(ввод)
-    if not тащим then return end
-    if ввод.UserInputType == Enum.UserInputType.Touch
-       or ввод.UserInputType == Enum.UserInputType.MouseMovement then
-        local д = ввод.Position - начПозиция
-        if д.Magnitude > 6 then двинули = true end
-        if двинули then
-            local абс = экран.AbsoluteSize
-            главнаяКнопка.Position = UDim2.fromOffset(
-                math.clamp(стартПозиция.X.Offset + д.X, 0, math.max(0, абс.X - 56)),
-                math.clamp(стартПозиция.Y.Offset + д.Y, 0, math.max(0, абс.Y - 56))
+UIS.InputChanged:Connect(function(input)
+    if not dragging then return end
+    if input.UserInputType == Enum.UserInputType.Touch
+       or input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - startInputPos
+        if delta.Magnitude > 6 then moved = true end
+        if moved then
+            local abs = screen.AbsoluteSize
+            mainButton.Position = UDim2.fromOffset(
+                math.clamp(startButtonPos.X.Offset + delta.X, 0, math.max(0, abs.X - 56)),
+                math.clamp(startButtonPos.Y.Offset + delta.Y, 0, math.max(0, abs.Y - 56))
             )
         end
     end
 end)
 
-game:GetService("UserInputService").InputEnded:Connect(function(ввод)
-    if ввод.UserInputType == Enum.UserInputType.Touch
-       or ввод.UserInputType == Enum.UserInputType.MouseButton1 then
-        тащим = false
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch
+       or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
     end
 end)
 
-local панельОткрыта = false
-local function установитьПанель(откр)
-    панельОткрыта = откр
-    звякПереключатель()
-    if откр then
-        local абс = экран.AbsoluteSize
-        панель.Size = UDim2.fromOffset(300, math.clamp(абс.Y - 40, 200, 700))
-        панель.Position = UDim2.fromOffset(
-            math.clamp(главнаяКнопка.Position.X.Offset + 70, 0, math.max(0, абс.X - 310)), 20)
-        масштабПанели.Scale = 0.85
-        панель.Visible = true
-        TweenService:Create(масштабПанели, TweenInfo.new(0.2, Enum.EasingStyle.Back), { Scale = 1 }):Play()
+local panelOpen = false
+local function setPanel(open)
+    panelOpen = open
+    sfxSwitch()
+    if open then
+        local abs = screen.AbsoluteSize
+        panel.Size = UDim2.fromOffset(300, math.clamp(abs.Y - 40, 200, 700))
+        panel.Position = UDim2.fromOffset(
+            math.clamp(mainButton.Position.X.Offset + 70, 0, math.max(0, abs.X - 310)), 20)
+        panelScale.Scale = 0.85
+        panel.Visible = true
+        TweenService:Create(panelScale, TweenInfo.new(0.2, Enum.EasingStyle.Back), { Scale = 1 }):Play()
     else
-        TweenService:Create(масштабПанели, TweenInfo.new(0.12), { Scale = 0.85 }):Play()
+        TweenService:Create(panelScale, TweenInfo.new(0.12), { Scale = 0.85 }):Play()
         task.delay(0.13, function()
-            if not панельОткрыта then панель.Visible = false end
+            if not panelOpen then panel.Visible = false end
         end)
     end
 end
 
-главнаяКнопка.Activated:Connect(function()
-    if двинули then двинули = false; return end
-    установитьПанель(not панельОткрыта)
+mainButton.Activated:Connect(function()
+    if moved then moved = false; return end
+    setPanel(not panelOpen)
 end)
 
-кнопкаВкл.Activated:Connect(function()
-    НАСТРОЙКИ.Включено = not НАСТРОЙКИ.Включено
-    звякПереключатель()
-    if НАСТРОЙКИ.Включено then
-        кнопкаВкл.Text = "🟢 ВКЛЮЧЕНО"
-        кнопкаВкл.TextColor3 = Color3.fromRGB(0,255,120)
-        кнопкаВкл.BackgroundColor3 = Color3.fromRGB(40,50,40)
-        включитьЗащиту()
+btnToggle.Activated:Connect(function()
+    SETTINGS.Enabled = not SETTINGS.Enabled
+    sfxSwitch()
+    if SETTINGS.Enabled then
+        btnToggle.Text = "🟢 ВКЛЮЧЕНО"
+        btnToggle.TextColor3 = Color3.fromRGB(0,255,120)
+        btnToggle.BackgroundColor3 = Color3.fromRGB(40,50,40)
+        enableProtection()
     else
-        кнопкаВкл.Text = "🔴 ВЫКЛЮЧЕНО"
-        кнопкаВкл.TextColor3 = Color3.fromRGB(255,80,80)
-        кнопкаВкл.BackgroundColor3 = Color3.fromRGB(50,35,40)
-        выключитьЗащиту()
-        if модельСферы then модельСферы:Destroy(); модельСферы = nil; частьСферы = nil end
-        уведомить("🔴 Анти-Чит ВЫКЛ", Color3.fromRGB(255,100,100), 2)
+        btnToggle.Text = "🔴 ВЫКЛЮЧЕНО"
+        btnToggle.TextColor3 = Color3.fromRGB(255,80,80)
+        btnToggle.BackgroundColor3 = Color3.fromRGB(50,35,40)
+        disableProtection()
+        if sphereModel then sphereModel:Destroy(); sphereModel = nil; spherePart = nil end
+        notify("🔴 Анти-Чит ВЫКЛ", Color3.fromRGB(255,100,100), 2)
     end
 end)
 
--- Обработчики кнопок защит
-local function переключ(кнопка, поле, префикс, цветВкл, цветВыкл)
-    НАСТРОЙКИ[поле] = not НАСТРОЙКИ[поле]
-    кнопка.Text = префикс .. ": " .. (НАСТРОЙКИ[поле] and "ВКЛ" or "ВЫКЛ")
-    if НАСТРОЙКИ[поле] then
-        кнопка.TextColor3 = цветВкл or Color3.fromRGB(160,255,160)
-        кнопка.BackgroundColor3 = Color3.fromRGB(35,50,35)
+local function toggleBtn(button, field, prefix, colorOn, colorOff)
+    SETTINGS[field] = not SETTINGS[field]
+    button.Text = prefix .. ": " .. (SETTINGS[field] and "ВКЛ" or "ВЫКЛ")
+    if SETTINGS[field] then
+        button.TextColor3 = colorOn or Color3.fromRGB(160,255,160)
+        button.BackgroundColor3 = Color3.fromRGB(35,50,35)
     else
-        кнопка.TextColor3 = цветВыкл or Color3.fromRGB(220,200,200)
-        кнопка.BackgroundColor3 = Color3.fromRGB(50,40,40)
+        button.TextColor3 = colorOff or Color3.fromRGB(220,200,200)
+        button.BackgroundColor3 = Color3.fromRGB(50,40,40)
     end
 end
 
-кнФлинг.Activated:Connect(function() переключ(кнФлинг, "АнтиФлинг", "🛡️ Анти-Флинг") end)
-кнПустота.Activated:Connect(function() переключ(кнПустота, "АнтиПустота", "🛡️ Анти-Пустота") end)
-кнТелепорт.Activated:Connect(function() переключ(кнТелепорт, "АнтиТелепорт", "🛡️ Анти-Телепорт") end)
-кнОтбрас.Activated:Connect(function() переключ(кнОтбрас, "АнтиОтбрасывание", "🛡️ Анти-Отбрасывание") end)
-кнЗамороз.Activated:Connect(function() переключ(кнЗамороз, "АнтиЗаморозка", "🛡️ Анти-Заморозка") end)
-кнДропКик.Activated:Connect(function() переключ(кнДропКик, "АнтиДропКик", "🛡️ Анти-ДропКик") end)
-кнМгнСмерть.Activated:Connect(function() переключ(кнМгнСмерть, "АнтиМгновСмерть", "🛡️ Анти-МгновСмерть") end)
-кнВзрыв.Activated:Connect(function() переключ(кнВзрыв, "АнтиВзрыв", "🛡️ Анти-Взрыв") end)
-кнСуперК.Activated:Connect(function() переключ(кнСуперК, "АнтиСуперКольцо", "🛡️ Анти-СуперКольцо") end)
-кнУронП.Activated:Connect(function() переключ(кнУронП, "УбратьУронПадения", "🛡️ Убрать урон падения") end)
-кнЛечение.Activated:Connect(function() переключ(кнЛечение, "АвтоЛечение", "💚 Авто-Лечение") end)
-кнБлокПоз.Activated:Connect(function() переключ(кнБлокПоз, "БлокировкаПозиции", "📍 Блокировка позиции") end)
-кнВторж.Activated:Connect(function() переключ(кнВторж, "ДетектВторжения", "🚨 Детект вторжения") end)
-кнСкорость.Activated:Connect(function() переключ(кнСкорость, "ДетектСкорости", "⚡ Детект скорости") end)
-кнGodMode.Activated:Connect(function() переключ(кнGodMode, "ДетектGodMode", "👁️ Детект GodMode") end)
+btnFling.Activated:Connect(function()      toggleBtn(btnFling, "AntiFling", "🛡️ Анти-Флинг") end)
+btnVoid.Activated:Connect(function()       toggleBtn(btnVoid, "AntiVoid", "🛡️ Анти-Пустота") end)
+btnTeleport.Activated:Connect(function()   toggleBtn(btnTeleport, "AntiTeleport", "🛡️ Анти-Телепорт") end)
+btnKnockback.Activated:Connect(function()  toggleBtn(btnKnockback, "AntiKnockback", "🛡️ Анти-Отбрасывание") end)
+btnFreeze.Activated:Connect(function()     toggleBtn(btnFreeze, "AntiFreeze", "🛡️ Анти-Заморозка") end)
+btnDropKick.Activated:Connect(function()   toggleBtn(btnDropKick, "AntiDropKick", "🛡️ Анти-ДропКик") end)
+btnInstant.Activated:Connect(function()    toggleBtn(btnInstant, "AntiInstantKill", "🛡️ Анти-МгновСмерть") end)
+btnExplosion.Activated:Connect(function()  toggleBtn(btnExplosion, "AntiExplosion", "🛡️ Анти-Взрыв") end)
+btnSuperRing.Activated:Connect(function()  toggleBtn(btnSuperRing, "AntiSuperRing", "🛡️ Анти-СуперКольцо") end)
+btnHomelander.Activated:Connect(function() toggleBtn(btnHomelander, "AntiHomelander", "🛡️ Анти-Homelander") end)
+btnGrab.Activated:Connect(function()       toggleBtn(btnGrab, "AntiGrab", "🛡️ Анти-Grab") end)
+btnRagdoll.Activated:Connect(function()    toggleBtn(btnRagdoll, "AntiRagdoll", "🛡️ Анти-Ragdoll") end)
+btnKillaura.Activated:Connect(function()   toggleBtn(btnKillaura, "AntiKillaura", "🛡️ Анти-Killaura") end)
+btnNoFall.Activated:Connect(function()     toggleBtn(btnNoFall, "NoFallDamage", "🛡️ Убрать урон падения") end)
+btnHeal.Activated:Connect(function()       toggleBtn(btnHeal, "AutoHeal", "💚 Авто-Лечение") end)
+btnLock.Activated:Connect(function()       toggleBtn(btnLock, "LockPosition", "📍 Блокировка позиции") end)
+btnIntrusion.Activated:Connect(function()  toggleBtn(btnIntrusion, "IntrusionDetect", "🚨 Детект вторжения") end)
+btnSpeed.Activated:Connect(function()      toggleBtn(btnSpeed, "DetectSpeed", "⚡ Детект скорости") end)
+btnGodMode.Activated:Connect(function()    toggleBtn(btnGodMode, "DetectGodMode", "👁️ Детект GodMode") end)
 
-кнСфера.Activated:Connect(function()
-    НАСТРОЙКИ.ВизуальнаяСфера = not НАСТРОЙКИ.ВизуальнаяСфера
-    кнСфера.Text = "🔵 Сфера: " .. (НАСТРОЙКИ.ВизуальнаяСфера and "ВКЛ" or "ВЫКЛ")
-    if not НАСТРОЙКИ.ВизуальнаяСфера then
-        if модельСферы then модельСферы:Destroy(); модельСферы = nil; частьСферы = nil end
+btnSphere.Activated:Connect(function()
+    SETTINGS.VisualSphere = not SETTINGS.VisualSphere
+    btnSphere.Text = "🔵 Сфера: " .. (SETTINGS.VisualSphere and "ВКЛ" or "ВЫКЛ")
+    if not SETTINGS.VisualSphere then
+        if sphereModel then sphereModel:Destroy(); sphereModel = nil; spherePart = nil end
     else
-        создатьСферу()
+        createSphere()
     end
 end)
-кнРазмер.Activated:Connect(function()
-    local размеры = {4, 6, 8, 12, 16, 20, 25, 30}
-    local ид = 1
-    for i, v in ipairs(размеры) do if v == НАСТРОЙКИ.РазмерСферы then ид = i; break end end
-    НАСТРОЙКИ.РазмерСферы = размеры[(ид % #размеры) + 1]
-    кнРазмер.Text = "📏 Размер сферы: " .. НАСТРОЙКИ.РазмерСферы
-    if частьСферы then
-        частьСферы.Size = Vector3.new(НАСТРОЙКИ.РазмерСферы, НАСТРОЙКИ.РазмерСферы, НАСТРОЙКИ.РазмерСферы)
+btnSize.Activated:Connect(function()
+    local sizes = {4, 6, 8, 12, 16, 20, 25, 30}
+    local idx = 1
+    for i, v in ipairs(sizes) do if v == SETTINGS.SphereSize then idx = i; break end end
+    SETTINGS.SphereSize = sizes[(idx % #sizes) + 1]
+    btnSize.Text = "📏 Размер сферы: " .. SETTINGS.SphereSize
+    if spherePart then
+        spherePart.Size = Vector3.new(SETTINGS.SphereSize, SETTINGS.SphereSize, SETTINGS.SphereSize)
     end
 end)
 
-кнУклон.Activated:Connect(function()
-    УКЛОНЕНИЕ.Включено = not УКЛОНЕНИЕ.Включено
-    кнУклон.Text = "🥷 Уклонение: " .. (УКЛОНЕНИЕ.Включено and "ВКЛ" or "ВЫКЛ")
-    кнУклон.BackgroundColor3 = УКЛОНЕНИЕ.Включено and Color3.fromRGB(60,80,50) or Color3.fromRGB(50,50,50)
+btnDodge.Activated:Connect(function()
+    DODGE.Enabled = not DODGE.Enabled
+    btnDodge.Text = "🥷 Уклонение: " .. (DODGE.Enabled and "ВКЛ" or "ВЫКЛ")
+    btnDodge.BackgroundColor3 = DODGE.Enabled and Color3.fromRGB(60,80,50) or Color3.fromRGB(50,50,50)
 end)
-кнТролл.Activated:Connect(function()
-    ТРОЛЛИНГ.Включено = not ТРОЛЛИНГ.Включено
-    кнТролл.Text = "👁️ Детект троллинга: " .. (ТРОЛЛИНГ.Включено and "ВКЛ" or "ВЫКЛ")
+btnTroll.Activated:Connect(function()
+    TROLLING.Enabled = not TROLLING.Enabled
+    btnTroll.Text = "👁️ Детект троллинга: " .. (TROLLING.Enabled and "ВКЛ" or "ВЫКЛ")
 end)
-кнОтветн.Activated:Connect(function()
-    ОТВЕТНЫЙ.Включено = not ОТВЕТНЫЙ.Включено
-    кнОтветн.Text = "🚨 Ответный флинг: " .. (ОТВЕТНЫЙ.Включено and "ВКЛ" or "ВЫКЛ")
-    кнОтветн.BackgroundColor3 = ОТВЕТНЫЙ.Включено and Color3.fromRGB(100,30,30) or Color3.fromRGB(60,30,30)
+btnReverse.Activated:Connect(function()
+    REVERSE.Enabled = not REVERSE.Enabled
+    btnReverse.Text = "🚨 Ответный флинг: " .. (REVERSE.Enabled and "ВКЛ" or "ВЫКЛ")
+    btnReverse.BackgroundColor3 = REVERSE.Enabled and Color3.fromRGB(100,30,30) or Color3.fromRGB(60,30,30)
 end)
 
-кнСписок.Activated:Connect(function()
-    local список = {}
-    for p in pairs(ПОМЕЧЕННЫЕ) do
-        if p and p.Parent then table.insert(список, p.Name) end
+btnList.Activated:Connect(function()
+    local list = {}
+    for p in pairs(MARKED) do
+        if p and p.Parent then table.insert(list, p.Name) end
     end
-    if #список == 0 then
-        уведомить("📋 Читеров не найдено", Color3.fromRGB(200, 200, 255), 3)
+    if #list == 0 then
+        notify("📋 Читеров не найдено", Color3.fromRGB(200, 200, 255), 3)
     else
-        уведомить("📋 Читеры: " .. table.concat(список, ", "), Color3.fromRGB(255, 180, 220), 5)
+        notify("📋 Читеры: " .. table.concat(list, ", "), Color3.fromRGB(255, 180, 220), 5)
     end
 end)
 
-кнЗвук.Activated:Connect(function()
-    НАСТРОЙКИ.Звуки = not НАСТРОЙКИ.Звуки
-    кнЗвук.Text = "🔊 Звуки: " .. (НАСТРОЙКИ.Звуки and "ВКЛ" or "ВЫКЛ")
-    if НАСТРОЙКИ.Звуки then звякПереключатель() end
+btnSounds.Activated:Connect(function()
+    SETTINGS.Sounds = not SETTINGS.Sounds
+    btnSounds.Text = "🔊 Звуки: " .. (SETTINGS.Sounds and "ВКЛ" or "ВЫКЛ")
+    if SETTINGS.Sounds then sfxSwitch() end
 end)
 
-кнТестЗвук.Activated:Connect(function()
-    кнТестЗвук.Text = "⏳ Проигрываю..."
+btnTestSnd.Activated:Connect(function()
+    btnTestSnd.Text = "⏳ Проигрываю..."
     task.wait(0.1)
-    звякКлик()
+    sfxClick()
     task.wait(0.5)
-    звякУворотСанса()
+    sfxDodgeSans()
     task.wait(3)
-    кнТестЗвук.Text = "✅ Готово"
+    btnTestSnd.Text = "✅ Готово"
     task.wait(2)
-    кнТестЗвук.Text = "🎵 Проверить звуки"
+    btnTestSnd.Text = "🎵 Проверить звуки"
 end)
 
 -- ==================== СОХРАНЕНИЕ ====================
-local ФАЙЛ_СОХРАНЕНИЯ = "orbit_ac_settings.json"
-local ЕСТЬ_ФС = (writefile and readfile and isfile and type(writefile) == "function")
+local SAVE_FILE = "orbit_ac_settings.json"
+local HAS_FS = (writefile and readfile and isfile and type(writefile) == "function")
 
-кнСохранить.Activated:Connect(function()
-    if not ЕСТЬ_ФС then
-        уведомить("❌ Нет файловой системы", Color3.fromRGB(255, 100, 100), 2)
+btnSave.Activated:Connect(function()
+    if not HAS_FS then
+        notify("❌ Нет файловой системы", Color3.fromRGB(255, 100, 100), 2)
         return
     end
-    local ок = pcall(function()
-        local данные = {}
-        for k, v in pairs(НАСТРОЙКИ) do
+    local ok = pcall(function()
+        local data = {}
+        for k, v in pairs(SETTINGS) do
             if type(v) ~= "userdata" and type(v) ~= "function" then
-                данные[k] = v
+                data[k] = v
             end
         end
-        writefile(ФАЙЛ_СОХРАНЕНИЯ, game:GetService("HttpService"):JSONEncode(данные))
+        writefile(SAVE_FILE, HttpService:JSONEncode(data))
     end)
-    if ок then
-        кнСохранить.Text = "✅ Сохранено!"
+    if ok then
+        btnSave.Text = "✅ Сохранено!"
         task.wait(1.5)
-        кнСохранить.Text = "💾 Сохранить настройки"
-        уведомить("💾 Настройки сохранены", Color3.fromRGB(160, 255, 180), 2)
+        btnSave.Text = "💾 Сохранить настройки"
+        notify("💾 Настройки сохранены", Color3.fromRGB(160, 255, 180), 2)
     else
-        уведомить("❌ Ошибка сохранения", Color3.fromRGB(255, 100, 100), 2)
+        notify("❌ Ошибка сохранения", Color3.fromRGB(255, 100, 100), 2)
     end
 end)
 
-кнЗагрузить.Activated:Connect(function()
-    if not ЕСТЬ_ФС or not isfile(ФАЙЛ_СОХРАНЕНИЯ) then
-        уведомить("❌ Нет сохранения", Color3.fromRGB(255, 100, 100), 2)
+btnLoad.Activated:Connect(function()
+    if not HAS_FS or not isfile(SAVE_FILE) then
+        notify("❌ Нет сохранения", Color3.fromRGB(255, 100, 100), 2)
         return
     end
     pcall(function()
-        local данные = game:GetService("HttpService"):JSONDecode(readfile(ФАЙЛ_СОХРАНЕНИЯ))
-        for k, v in pairs(данные) do
-            if НАСТРОЙКИ[k] ~= nil then НАСТРОЙКИ[k] = v end
+        local data = HttpService:JSONDecode(readfile(SAVE_FILE))
+        for k, v in pairs(data) do
+            if SETTINGS[k] ~= nil then SETTINGS[k] = v end
         end
-        уведомить("📂 Настройки загружены", Color3.fromRGB(180, 220, 255), 2)
+        notify("📂 Настройки загружены", Color3.fromRGB(180, 220, 255), 2)
     end)
 end)
 
-кнСброс.Activated:Connect(function()
-    НАСТРОЙКИ.АнтиФлинг = true
-    НАСТРОЙКИ.АнтиПустота = true
-    НАСТРОЙКИ.АнтиТелепорт = true
-    НАСТРОЙКИ.АнтиОтбрасывание = true
-    НАСТРОЙКИ.АнтиЗаморозка = true
-    НАСТРОЙКИ.АнтиЯкорь = true
-    НАСТРОЙКИ.АнтиМгновСмерть = true
-    НАСТРОЙКИ.АнтиДропКик = true
-    НАСТРОЙКИ.АнтиВзрыв = true
-    НАСТРОЙКИ.АнтиСуперКольцо = true
-    НАСТРОЙКИ.УбратьУронПадения = true
-    НАСТРОЙКИ.АвтоЛечение = false
-    НАСТРОЙКИ.БлокировкаПозиции = false
-    НАСТРОЙКИ.ВизуальнаяСфера = false
-    НАСТРОЙКИ.ДетектВторжения = true
-    УКЛОНЕНИЕ.Включено = false
-    ТРОЛЛИНГ.Включено = true
-    ОТВЕТНЫЙ.Включено = false
-    if модельСферы then модельСферы:Destroy(); модельСферы = nil; частьСферы = nil end
-    уведомить("🔄 Сброс выполнен", Color3.fromRGB(255, 180, 180), 2)
+btnReset.Activated:Connect(function()
+    SETTINGS.AntiFling      = true
+    SETTINGS.AntiVoid       = true
+    SETTINGS.AntiTeleport   = true
+    SETTINGS.AntiKnockback  = true
+    SETTINGS.AntiFreeze     = true
+    SETTINGS.AntiAnchor     = true
+    SETTINGS.AntiInstantKill= true
+    SETTINGS.AntiDropKick   = true
+    SETTINGS.AntiExplosion  = true
+    SETTINGS.AntiSuperRing  = true
+    SETTINGS.AntiHomelander = true
+    SETTINGS.AntiGrab       = true
+    SETTINGS.AntiRagdoll    = true
+    SETTINGS.AntiKillaura   = true
+    SETTINGS.NoFallDamage   = true
+    SETTINGS.AutoHeal       = false
+    SETTINGS.LockPosition   = false
+    SETTINGS.VisualSphere   = false
+    SETTINGS.IntrusionDetect= true
+    DODGE.Enabled           = false
+    TROLLING.Enabled        = true
+    REVERSE.Enabled         = false
+    if sphereModel then sphereModel:Destroy(); sphereModel = nil; spherePart = nil end
+    notify("🔄 Сброс выполнен", Color3.fromRGB(255, 180, 180), 2)
 end)
 
-кнВыгрузить.Activated:Connect(function()
+btnUnload.Activated:Connect(function()
     pcall(function() GENV._ORBIT_AC_UNLOAD() end)
 end)
 
 -- ==================== ВЫГРУЗКА ====================
 GENV._ORBIT_AC_UNLOAD = function()
-    выключитьЗащиту()
-    if модельСферы then pcall(function() модельСферы:Destroy() end) end
-    if экран then pcall(function() экран:Destroy() end) end
-    if папкаЗвуков then pcall(function() папкаЗвуков:Destroy() end) end
+    disableProtection()
+    if sphereModel then pcall(function() sphereModel:Destroy() end) end
+    if screen then pcall(function() screen:Destroy() end) end
+    if soundFolder then pcall(function() soundFolder:Destroy() end) end
     GENV._ORBIT_AC_LOADED = nil
     GENV._ORBIT_AC_UNLOAD = nil
     GENV._ORBIT_AC_NOTIFY = nil
@@ -1574,61 +1696,61 @@ end
 
 -- ==================== ОБНОВЛЕНИЕ СТАТИСТИКИ ====================
 task.spawn(function()
-    while экран and экран.Parent do
+    while screen and screen.Parent do
         task.wait(0.5)
-        local прошло = tick() - СЕССИЯ.начало
-        local мин = math.floor(прошло / 60)
-        local сек = math.floor(прошло % 60)
-        статистика.Text = string.format(
+        local elapsed = tick() - SESSION.startTime
+        local min = math.floor(elapsed / 60)
+        local sec = math.floor(elapsed % 60)
+        statsLabel.Text = string.format(
             "🛡️ Защит: %d\n🥷 Уворотов: %d\n🚨 Вторжений: %d\n🚩 Читеров: %d\n⏱️ Сессия: %d:%02d",
-            СЕССИЯ.защитСработало,
-            СЕССИЯ.уворотов,
-            СЕССИЯ.вторжений,
-            СЕССИЯ.читеровПомечено,
-            мин, сек
+            SESSION.defenses,
+            SESSION.dodges,
+            SESSION.intrusions,
+            SESSION.cheatersMarked,
+            min, sec
         )
-        кнСписок.Text = "📋 Список читеров: " .. СЕССИЯ.читеровПомечено
-        if НАСТРОЙКИ.ВизуальнаяСфера then обновитьСферу() end
+        btnList.Text = "📋 Список читеров: " .. SESSION.cheatersMarked
+        if SETTINGS.VisualSphere then updateSphere() end
     end
 end)
 
 -- ==================== ГОРЯЧАЯ КЛАВИША ====================
-game:GetService("UserInputService").InputBegan:Connect(function(ввод, обработано)
-    if обработано then return end
-    if ввод.KeyCode == Enum.KeyCode.K then
+UIS.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Enum.KeyCode.K then
         if GENV._ORBIT_AC_TOGGLE then GENV._ORBIT_AC_TOGGLE() end
     end
 end)
 
 GENV._ORBIT_AC_TOGGLE = function()
-    НАСТРОЙКИ.Включено = not НАСТРОЙКИ.Включено
-    if НАСТРОЙКИ.Включено then
-        кнопкаВкл.Text = "🟢 ВКЛЮЧЕНО"
-        кнопкаВкл.TextColor3 = Color3.fromRGB(0,255,120)
-        кнопкаВкл.BackgroundColor3 = Color3.fromRGB(40,50,40)
-        включитьЗащиту()
+    SETTINGS.Enabled = not SETTINGS.Enabled
+    if SETTINGS.Enabled then
+        btnToggle.Text = "🟢 ВКЛЮЧЕНО"
+        btnToggle.TextColor3 = Color3.fromRGB(0,255,120)
+        btnToggle.BackgroundColor3 = Color3.fromRGB(40,50,40)
+        enableProtection()
     else
-        кнопкаВкл.Text = "🔴 ВЫКЛЮЧЕНО"
-        кнопкаВкл.TextColor3 = Color3.fromRGB(255,80,80)
-        кнопкаВкл.BackgroundColor3 = Color3.fromRGB(50,35,40)
-        выключитьЗащиту()
-        if модельСферы then модельСферы:Destroy(); модельСферы = nil; частьСферы = nil end
+        btnToggle.Text = "🔴 ВЫКЛЮЧЕНО"
+        btnToggle.TextColor3 = Color3.fromRGB(255,80,80)
+        btnToggle.BackgroundColor3 = Color3.fromRGB(50,35,40)
+        disableProtection()
+        if sphereModel then sphereModel:Destroy(); sphereModel = nil; spherePart = nil end
     end
 end
 
 -- ==================== АВТОЗАПУСК ====================
 task.spawn(function()
     task.wait(1)
-    уведомить("🛡 ОРБИТА АНТИ-ЧИТ v11.2", Color3.fromRGB(255, 200, 200), 3)
+    notify("🛡 ОРБИТА АНТИ-ЧИТ v12.0", Color3.fromRGB(255, 200, 200), 3)
     task.wait(0.3)
-    уведомить("🚨 Детект вторжения: ВКЛ", Color3.fromRGB(255, 180, 200), 3)
+    notify("🆕 Anti-Homelander / Grab / Ragdoll / Killaura", Color3.fromRGB(255, 220, 180), 3)
     task.wait(0.3)
-    уведомить("🎮 K — вкл/выкл защиту", Color3.fromRGB(200, 220, 255), 3)
+    notify("🎮 K — вкл/выкл защиту", Color3.fromRGB(200, 220, 255), 3)
 end)
 
-print("[Orbit Anti-Cheat v11.2] ═══════════════════════════")
-print("[Orbit Anti-Cheat v11.2] Автономный скрипт запущен ✅")
-print("[Orbit Anti-Cheat v11.2] Детект вторжения + Anti-SuperRing + Очередь звуков")
-print("[Orbit Anti-Cheat v11.2] ═══════════════════════════")
+print("[Orbit Anti-Cheat v12.0] ═══════════════════════════")
+print("[Orbit Anti-Cheat v12.0] Автономный скрипт запущен ✅")
+print("[Orbit Anti-Cheat v12.0] Anti-Homelander + Anti-Grab + Anti-Ragdoll + Anti-Killaura")
+print("[Orbit Anti-Cheat v12.0] ═══════════════════════════")
 
 return true
